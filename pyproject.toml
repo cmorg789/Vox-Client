@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vox-client"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "PyQt6>=6.8",
+    "qasync>=0.27",
+    "vox-sdk @ git+https://github.com/cmorg789/vox-py-sdk.git",
+]
+
+[project.scripts]
+vox-client = "vox_client.__main__:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vox_client"]
