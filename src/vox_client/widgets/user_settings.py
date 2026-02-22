@@ -794,12 +794,11 @@ class _AudioVideoPage(QWidget):
                     callback()
                 elif av_status == 0:  # NotDetermined
                     def _handler(granted: bool) -> None:
-                        from PyQt6.QtCore import QMetaObject, Qt as QtNS
+                        from PyQt6.QtCore import QTimer
                         target = callback if granted else denied_callback
-                        QMetaObject.invokeMethod(
-                            target.__self__, target.__name__,
-                            QtNS.ConnectionType.QueuedConnection,
-                        )
+                        # Schedule on the main thread; the completion handler
+                        # runs on an arbitrary AVFoundation background thread.
+                        QTimer.singleShot(0, target)
                     AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
                         media_type, _handler,
                     )
@@ -923,6 +922,8 @@ class _AudioVideoPage(QWidget):
             pass
 
     def _on_mic_data(self) -> None:
+        if self._audio_io is None:
+            return
         data = self._audio_io.readAll()
         if len(data) < 4:
             return

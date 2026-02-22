@@ -25,8 +25,11 @@ def main() -> None:
     # Warm up the multimedia backend so the first settings open isn't slow.
     # The FFmpeg plugin loads lazily on first *use*, not on import — calling
     # audioInputs() forces the plugin to load now.
-    from PyQt6.QtMultimedia import QMediaDevices
-    QMediaDevices.audioInputs()
+    try:
+        from PyQt6.QtMultimedia import QMediaDevices
+        QMediaDevices.audioInputs()
+    except Exception:
+        pass  # multimedia backend unavailable or permissions not yet granted
 
     vox_app = VoxApp(qt_app)
     vox_app.show_main()
