@@ -8,7 +8,7 @@ from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
 from vox_client.state import AppState
-from vox_client.theme import Theme, load_saved_hue
+from vox_client.theme import Theme, load_saved_flavor
 from vox_client.views.main_window import MainWindow
 
 _FONTS_DIR = Path(__file__).parent / "resources" / "fonts"
@@ -34,8 +34,8 @@ class VoxApp:
 
         # Theme setup
         state = AppState.instance()
-        hue = load_saved_hue()
-        state.theme = Theme(hue)
+        flavor = load_saved_flavor()
+        state.theme = Theme(flavor)
         self.qt_app.setStyleSheet(state.theme.generate_qss())
 
         # Re-apply QSS when theme changes

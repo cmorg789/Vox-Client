@@ -15,7 +15,7 @@ _CODE_RE = re.compile(r"`([^`]+)`")
 _MENTION_RE = re.compile(r"@(\w+)")
 
 
-def _render_body(body: str, accent_bright: str, bg_deep: str, accent_bg: str) -> str:
+def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, mention_bg: str) -> str:
     """Apply basic markdown formatting to message body.
 
     Returns HTML-safe text with inline code and @mention highlights.
@@ -25,13 +25,13 @@ def _render_body(body: str, accent_bright: str, bg_deep: str, accent_bg: str) ->
     text = html.escape(body)
     # Inline code
     text = _CODE_RE.sub(
-        rf'<span style="background-color: {bg_deep}; color: {accent_bright}; '
+        rf'<span style="background-color: {code_bg}; color: {code_color}; '
         rf'padding: 1px 2px; border-radius: 3px; font-size: 12px;">\1</span>',
         text,
     )
     # @mentions — accent_bright text with translucent accent background
     text = _MENTION_RE.sub(
-        rf'<span style="color: {accent_bright}; background-color: {accent_bg}; '
+        rf'<span style="color: {accent_bright}; background-color: {mention_bg}; '
         rf'padding: 1px 3px; border-radius: 3px; font-weight: bold;">@\1</span>',
         text,
     )
@@ -86,6 +86,11 @@ class MessageList(QScrollArea):
         state.message_updated.connect(self._on_message_updated)
         state.message_deleted.connect(self._on_message_deleted)
 
+    def restyle(self) -> None:
+        """Re-apply container-level inline styles after a theme change."""
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(f"background-color: {c.bg_main};")
+
     async def load_messages(self, feed_id: int) -> None:
         """Fetch and display the most recent messages for *feed_id*."""
         self._current_feed_id = feed_id
@@ -101,7 +106,7 @@ class MessageList(QScrollArea):
         if self._current_feed_id != feed_id:
             return
 
-        for msg in result.messages:
+        for msg in reversed(result.messages):
             self._add_message(msg.author_id, msg.timestamp, msg.body, msg_id=msg.msg_id)
 
         self._scroll_to_bottom()
@@ -169,7 +174,7 @@ class MessageList(QScrollArea):
 
         # System messages (no author)
         if author_id is None:
-            sys_msg = QLabel(body or "")
+            sys_msg = QLabel(f"\u2500\u2500 {body or ''} \u2500\u2500")
             sys_msg.setWordWrap(True)
             sys_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
             sys_msg.setStyleSheet(
@@ -205,7 +210,7 @@ class MessageList(QScrollArea):
             role_color = state.get_role_color(author_id) or c.accent
             author_label = QLabel(author_name)
             author_label.setStyleSheet(
-                f"color: {role_color}; font-weight: bold; font-size: 13px;"
+                f"color: {role_color}; font-weight: 600; font-size: 13px;"
             )
             header_layout.addWidget(author_label)
             header_layout.addStretch()
@@ -225,13 +230,10 @@ class MessageList(QScrollArea):
         spacer.setFixedWidth(48)
         msg_layout.addWidget(spacer)
 
-        # Translucent accent bg for mentions: pre-blend accent at 15% over bg_main
-        from vox_client.theme import hsl_to_hex
-        mention_bg = hsl_to_hex(state.theme.hue, 25, 13)
-        rendered = _render_body(msg_text, c.accent_bright, c.bg_deep, mention_bg)
+        rendered = _render_body(msg_text, c.accent_bright, c.status_success, c.bg_input, c.mention_bg)
         body_label = QLabel(rendered)
         body_label.setWordWrap(True)
-        body_label.setStyleSheet(f"color: {c.text_primary}; font-size: 13px; line-height: 1.4;")
+        body_label.setStyleSheet(f"color: {c.text_primary}; font-size: 13px;")
         body_label.setTextFormat(Qt.TextFormat.RichText)
         msg_layout.addWidget(body_label, stretch=1)
 
@@ -270,9 +272,7 @@ class MessageList(QScrollArea):
         body = getattr(event, "body", None) or ""
         state = AppState.instance()
         c = state.theme.colors
-        from vox_client.theme import hsl_to_hex
-        mention_bg = hsl_to_hex(state.theme.hue, 25, 13)
-        rendered = _render_body(body, c.accent_bright, c.bg_deep, mention_bg)
+        rendered = _render_body(body, c.accent_bright, c.status_success, c.bg_input, c.mention_bg)
         edited_tag = (
             f' <span style="color: {c.text_dim}; font-size: 11px;">(edited)</span>'
         )

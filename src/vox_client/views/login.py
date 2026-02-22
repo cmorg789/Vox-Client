@@ -22,8 +22,10 @@ from vox_client.state import AppState
 
 def _field_label(text: str) -> QLabel:
     c = AppState.instance().theme.colors
-    label = QLabel(text)
-    label.setStyleSheet(f"color: {c.text_dim};")
+    label = QLabel(text.upper())
+    label.setStyleSheet(
+        f"color: {c.text_dim}; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;"
+    )
     return label
 
 
@@ -48,19 +50,19 @@ class LoginDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setFixedSize(380, 360)
         self.setStyleSheet(
-            f"LoginDialog {{ background-color: {c.bg_hover}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 8px; }}"
+            f"LoginDialog {{ background-color: {c.bg_panel}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
         )
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 20, 24, 20)
+        outer.setContentsMargins(20, 16, 20, 16)
         outer.setSpacing(4)
 
         # Title
         self._title_label = QLabel("LOGIN")
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_label.setStyleSheet(
-            f"color: {c.accent}; font-size: 14px; font-weight: bold; "
+            f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
             f"padding-bottom: 8px; border: none;"
         )
         outer.addWidget(self._title_label)
@@ -108,9 +110,10 @@ class LoginDialog(QDialog):
         self._status.setStyleSheet(f"color: {c.text_dim}; padding: 4px 0px; border: none;")
         outer.addWidget(self._status)
 
-        # -- Action + Cancel buttons
+        # -- Action + Cancel buttons (right-aligned)
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
+        btn_row.addStretch()
 
         self._cancel_btn = QPushButton("[ CANCEL ]")
         self._cancel_btn.setAutoDefault(False)
@@ -119,6 +122,13 @@ class LoginDialog(QDialog):
 
         self._action_btn = QPushButton("[ LOGIN ]")
         self._action_btn.setDefault(True)
+        self._action_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
+            f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+            f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
+            f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
+        )
         self._action_btn.clicked.connect(self._on_action_clicked)
         btn_row.addWidget(self._action_btn)
 
@@ -150,7 +160,7 @@ class LoginDialog(QDialog):
         color_map = {
             "info": c.text_dim,
             "error": c.status_danger,
-            "success": c.accent,
+            "success": c.status_success,
             "warning": c.status_warning,
         }
         color = color_map.get(kind, c.text_dim)

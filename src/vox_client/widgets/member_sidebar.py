@@ -3,23 +3,22 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from vox_client.state import AppState
+from vox_client.widgets.avatar import AvatarWidget
 
 
 class _MemberItem(QWidget):
-    """Single member entry with avatar and name."""
+    """Single member entry with avatar, presence dot, name, and status text."""
 
     def __init__(self, user_id: int) -> None:
         super().__init__()
         self.user_id = user_id
-        self.setFixedHeight(32)
+        self.setFixedHeight(36)
 
         state = AppState.instance()
         c = state.theme.colors
-
-        from PyQt6.QtWidgets import QHBoxLayout
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 2, 8, 2)
@@ -27,21 +26,17 @@ class _MemberItem(QWidget):
 
         # Avatar circle
         name = state.get_display_name(user_id)
-        role_color = state.get_role_color(user_id) or c.accent_dim
+        layout.addWidget(AvatarWidget(user_id, size=24, parent=self))
 
-        avatar = QLabel(name[0].upper() if name else "?")
-        avatar.setFixedSize(24, 24)
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar.setStyleSheet(
-            f"background-color: {role_color}; color: {c.bg_deep}; "
-            f"border-radius: 12px; font-size: 10px; font-weight: bold;"
-        )
-        layout.addWidget(avatar)
-
-        # Status dot overlay (we put it on avatar via margin hack — simpler: separate dot)
+        # Status dot
         presence = state.get_presence(user_id)
         status = getattr(presence, "status", "offline") if presence else "offline"
-        dot_colors = {"online": c.accent_bright, "idle": c.status_idle, "dnd": c.status_danger, "offline": c.status_offline}
+        dot_colors = {
+            "online": c.status_success,
+            "idle": c.status_idle,
+            "dnd": c.status_danger,
+            "offline": c.status_offline,
+        }
         dot_color = dot_colors.get(status, c.status_offline)
 
         dot = QLabel("\u25cf")
@@ -49,11 +44,25 @@ class _MemberItem(QWidget):
         dot.setStyleSheet(f"color: {dot_color}; font-size: 8px;")
         layout.addWidget(dot)
 
-        # Name
+        # Name + status text column
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(0)
+
         name_label = QLabel(name)
         name_color = state.get_role_color(user_id) or c.text_secondary
-        name_label.setStyleSheet(f"color: {name_color}; font-size: 12px;")
-        layout.addWidget(name_label, stretch=1)
+        name_label.setStyleSheet(f"color: {name_color}; font-size: 13px;")
+        text_col.addWidget(name_label)
+
+        # Status text (custom status or default label)
+        custom = getattr(presence, "custom_status", None) if presence else None
+        status_labels = {"online": "Online", "idle": "Idle", "dnd": "Do Not Disturb", "offline": "Offline"}
+        status_text = custom if custom else status_labels.get(status, "Offline")
+        status_lbl = QLabel(status_text)
+        status_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 10px;")
+        text_col.addWidget(status_lbl)
+
+        layout.addLayout(text_col, stretch=1)
 
 
 class MemberSidebar(QFrame):
@@ -91,6 +100,11 @@ class MemberSidebar(QFrame):
         state.member_left.connect(lambda _: self.refresh())
         state.member_updated.connect(lambda _: self.refresh())
 
+    def restyle(self) -> None:
+        """Re-apply container-level inline styles after a theme change."""
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(f"background-color: {c.bg_panel}; border-left: 1px solid {c.border};")
+
     def refresh(self) -> None:
         """Rebuild the member list from cached data."""
         state = AppState.instance()
@@ -122,7 +136,7 @@ class MemberSidebar(QFrame):
                 return
             header = QLabel(f"  {label} \u2014 {len(user_ids)}")
             header.setStyleSheet(
-                f"color: {c.text_dim}; font-size: 10px; font-weight: bold; "
+                f"color: {c.text_dim}; font-size: 10px; font-weight: 600; "
                 f"padding: 12px 0 4px 0; letter-spacing: 1px;"
             )
             self._list_layout.addWidget(header)

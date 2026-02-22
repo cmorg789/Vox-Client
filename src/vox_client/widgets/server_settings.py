@@ -15,8 +15,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -40,6 +38,7 @@ from vox_sdk.permissions import (
 
 from vox_client.state import AppState
 from vox_client.theme import role_color_for_int
+from vox_client.widgets.avatar import AvatarWidget
 
 _ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
 
@@ -69,7 +68,7 @@ def _section_label(text: str) -> QLabel:
     c = AppState.instance().theme.colors
     lbl = QLabel(text)
     lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 10px; font-weight: bold; "
+        f"color: {c.text_dim}; font-size: 10px; font-weight: 600; "
         f"letter-spacing: 1px; padding: 12px 0 6px 0; border: none;"
     )
     return lbl
@@ -77,9 +76,10 @@ def _section_label(text: str) -> QLabel:
 
 def _field_label(text: str) -> QLabel:
     c = AppState.instance().theme.colors
-    lbl = QLabel(text)
+    lbl = QLabel(text.upper())
     lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 11px; padding: 2px 0 2px 0; border: none;"
+        f"color: {c.text_dim}; font-size: 11px; font-weight: 600; "
+        f"letter-spacing: 0.5px; padding: 2px 0 2px 0; border: none;"
     )
     return lbl
 
@@ -93,7 +93,7 @@ def _status_label() -> QLabel:
 
 def _set_status(label: QLabel, text: str, kind: str = "info") -> None:
     c = AppState.instance().theme.colors
-    color_map = {"info": c.text_dim, "error": c.status_danger, "success": c.accent}
+    color_map = {"info": c.text_dim, "error": c.status_danger, "success": c.status_success}
     color = color_map.get(kind, c.text_dim)
     label.setText(text)
     label.setStyleSheet(f"color: {color}; border: none; padding: 0; font-size: 11px;")
@@ -105,6 +105,13 @@ def _action_button(text: str, width: int = 110) -> QPushButton:
     btn.setFixedHeight(30)
     btn.setFixedWidth(width)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
+        f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
+        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+        f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
+        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
+    )
     return btn
 
 
@@ -115,10 +122,12 @@ def _danger_button(text: str, width: int = 110) -> QPushButton:
     btn.setFixedWidth(width)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setStyleSheet(
-        f"QPushButton {{ color: {c.status_danger}; border: 1px solid {c.status_danger}; "
-        f"border-radius: 4px; padding: 4px 12px; background: transparent; }}"
-        f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.bg_deep}; }}"
-        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; }}"
+        f"QPushButton {{ background-color: {c.status_danger_dim}; "
+        f"border: 1px solid {c.status_danger}; color: {c.status_danger}; "
+        f"border-radius: 4px; padding: 4px 12px; font-weight: 500; }}"
+        f"QPushButton:hover {{ background-color: {c.status_danger}; color: white; }}"
+        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; "
+        f"background: transparent; }}"
     )
     return btn
 
@@ -356,10 +365,10 @@ class _RoleEditPanel(QWidget):
                     cb.setStyleSheet(
                         f"QCheckBox {{ color: {c.text_secondary}; font-size: 11px; "
                         f"border: none; spacing: 6px; }}"
-                        f"QCheckBox::indicator {{ width: 14px; height: 14px; "
+                        f"QCheckBox::indicator {{ width: 16px; height: 16px; "
                         f"border: 1px solid {c.border_bright}; border-radius: 3px; "
                         f"background: {c.bg_panel}; }}"
-                        f"QCheckBox::indicator:checked {{ background: {c.accent}; "
+                        f"QCheckBox::indicator:checked {{ background: {c.accent_dim}; "
                         f"border-color: {c.accent}; }}"
                     )
                     row_w.addWidget(cb)
@@ -375,13 +384,13 @@ class _RoleEditPanel(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
+        btn_row.addStretch()
         self._save_btn = _action_button("[ SAVE ]")
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
         self._delete_btn = _danger_button("[ DELETE ]")
         self._delete_btn.clicked.connect(self._on_delete)
         btn_row.addWidget(self._delete_btn)
-        btn_row.addStretch()
         form_layout.addLayout(btn_row)
 
         form_layout.addStretch()
@@ -594,18 +603,9 @@ class _MemberRow(QWidget):
         row.setContentsMargins(8, 2, 8, 2)
         row.setSpacing(10)
 
-        # Avatar circle (like member sidebar)
+        # Avatar circle
         name = state.get_display_name(user_id)
-        role_color = state.get_role_color(user_id) or c.accent_dim
-
-        avatar = QLabel(name[0].upper() if name else "?")
-        avatar.setFixedSize(24, 24)
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar.setStyleSheet(
-            f"background-color: {role_color}; color: {c.bg_deep}; "
-            f"border-radius: 12px; font-size: 10px; font-weight: bold;"
-        )
-        row.addWidget(avatar)
+        row.addWidget(AvatarWidget(user_id, size=24, parent=self))
 
         # Name
         name_hex = state.get_role_color(user_id) or c.text_secondary
@@ -621,7 +621,7 @@ class _MemberRow(QWidget):
 
         # Action buttons
         btn_style = (
-            "QPushButton {{ color: {color}; font-size: 10px; font-weight: bold; "
+            "QPushButton {{ color: {color}; font-size: 10px; font-weight: 600; "
             "border: 1px solid {color}; border-radius: 3px; padding: 2px 8px; "
             "background: transparent; }}"
             "QPushButton:hover {{ background-color: {color}; color: {bg}; }}"
@@ -694,10 +694,13 @@ class _BanRow(QWidget):
         row.setSpacing(10)
 
         # Banned icon
-        icon = QLabel("\u26d4")
-        icon.setFixedWidth(18)
-        icon.setStyleSheet(f"color: {c.status_danger}; font-size: 12px; border: none;")
-        row.addWidget(icon)
+        icon_btn = QLabel()
+        icon_btn.setFixedSize(18, 18)
+        icon_btn.setPixmap(
+            _tinted_icon(_ICONS_DIR / "account-cancel.svg", c.status_danger, size=16).pixmap(16, 16)
+        )
+        icon_btn.setStyleSheet("border: none;")
+        row.addWidget(icon_btn)
 
         lbl = QLabel(f"User {user_id}")
         lbl.setStyleSheet(f"color: {c.text_secondary}; font-size: 12px; border: none;")
@@ -719,7 +722,7 @@ class _BanRow(QWidget):
         self._unban_btn.setFixedHeight(22)
         self._unban_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._unban_btn.setStyleSheet(
-            f"QPushButton {{ color: {c.accent}; font-size: 10px; font-weight: bold; "
+            f"QPushButton {{ color: {c.accent}; font-size: 10px; font-weight: 600; "
             f"border: 1px solid {c.accent_dim}; border-radius: 3px; "
             f"padding: 2px 8px; background: transparent; }}"
             f"QPushButton:hover {{ background-color: {c.accent}; color: {c.bg_deep}; }}"
@@ -942,8 +945,8 @@ class ServerSettingsDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setFixedSize(720, 520)
         self.setStyleSheet(
-            f"ServerSettingsDialog {{ background-color: {c.bg_hover}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 8px; }}"
+            f"ServerSettingsDialog {{ background-color: {c.bg_panel}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
         )
 
         # Allow dragging the frameless dialog
@@ -960,7 +963,7 @@ class ServerSettingsDialog(QDialog):
         title_bar.setStyleSheet(
             f"#SettingsTitleBar {{ background-color: {c.bg_panel}; "
             f"border-bottom: 1px solid {c.border}; "
-            f"border-top-left-radius: 8px; border-top-right-radius: 8px; }}"
+            f"border-top-left-radius: 6px; border-top-right-radius: 6px; }}"
         )
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(16, 0, 10, 0)
@@ -968,20 +971,20 @@ class ServerSettingsDialog(QDialog):
 
         title_lbl = QLabel("SERVER SETTINGS")
         title_lbl.setStyleSheet(
-            f"color: {c.accent}; font-size: 11px; font-weight: bold; "
+            f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
             f"letter-spacing: 1px; border: none;"
         )
         title_layout.addWidget(title_lbl)
         title_layout.addStretch()
 
         close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_secondary))
-        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
+        close_btn.setIconSize(QSize(18, 18))
         close_btn.setFixedSize(28, 28)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 14px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_active}; }}"
+            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
         close_btn.clicked.connect(self.reject)
         title_layout.addWidget(close_btn)
@@ -1000,7 +1003,7 @@ class ServerSettingsDialog(QDialog):
         nav_panel.setFixedWidth(160)
         nav_panel.setStyleSheet(
             f"background-color: {c.bg_panel}; "
-            f"border-bottom-left-radius: 8px;"
+            f"border-bottom-left-radius: 6px;"
         )
         nav_layout = QVBoxLayout(nav_panel)
         nav_layout.setContentsMargins(8, 12, 8, 12)
@@ -1072,7 +1075,7 @@ class ServerSettingsDialog(QDialog):
                 btn.setStyleSheet(
                     f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
                     f"color: {c.text_primary}; border: none; border-radius: 4px; "
-                    f"background-color: {c.bg_active}; font-weight: bold; }}"
+                    f"background-color: {c.bg_active}; font-weight: 600; }}"
                 )
             else:
                 btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_dim, size=14))

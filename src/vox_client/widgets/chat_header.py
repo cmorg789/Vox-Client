@@ -30,7 +30,7 @@ class ChatHeader(QFrame):
 
         self._channel_label = QLabel()
         self._channel_label.setStyleSheet(
-            f"color: {c.text_primary}; font-weight: bold; font-size: 13px;"
+            f"color: {c.text_primary}; font-weight: 600; font-size: 13px;"
         )
         layout.addWidget(self._channel_label)
 
@@ -40,19 +40,36 @@ class ChatHeader(QFrame):
         layout.addWidget(self._divider)
 
         self._topic_label = QLabel()
-        self._topic_label.setStyleSheet(f"color: {c.text_dim}; font-size: 12px;")
+        self._topic_label.setStyleSheet(f"color: {c.text_dim}; font-size: 11px;")
         self._topic_label.hide()
         layout.addWidget(self._topic_label, stretch=1)
 
         layout.addStretch()
 
+    def restyle(self) -> None:
+        """Re-apply inline styles after a theme change."""
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(
+            f"#ChatHeader {{ background-color: {c.bg_main}; "
+            f"border-bottom: 1px solid {c.border}; }}"
+        )
+        self._channel_label.setStyleSheet(
+            f"color: {c.text_primary}; font-weight: 600; font-size: 13px;"
+        )
+        self._divider.setStyleSheet(f"color: {c.border_bright}; font-size: 13px;")
+        self._topic_label.setStyleSheet(f"color: {c.text_dim}; font-size: 11px;")
+
     def set_channel(self, feed_id: int) -> None:
         """Update header for the given feed."""
         state = AppState.instance()
+        c = state.theme.colors
         name = state.get_feed_name(feed_id)
         topic = state.get_feed_topic(feed_id)
 
-        self._channel_label.setText(f"# {name}")
+        self._channel_label.setTextFormat(Qt.TextFormat.RichText)
+        self._channel_label.setText(
+            f'<span style="color:{c.text_dim}">#</span> {name}'
+        )
 
         if topic:
             self._divider.show()

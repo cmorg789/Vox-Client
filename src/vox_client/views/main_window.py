@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.base_events
+import threading
 
-from PyQt6.QtCore import QSettings, QTimer
+from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 from qasync import asyncSlot
 
 from vox_sdk import Client
+from vox_sdk.models.users import PresenceResponse
 
 from vox_client.state import AppState
 
@@ -36,13 +38,19 @@ def _clear_session() -> None:
     s.remove("session/url")
     s.remove("session/token")
     s.remove("session/user_id")
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """Return True if *exc* indicates the token is invalid (401/403)."""
+    from vox_sdk.errors import VoxHTTPError
+    return isinstance(exc, VoxHTTPError) and exc.status in (401, 403)
 from vox_client.widgets.channel_sidebar import ChannelSidebar
 from vox_client.widgets.chat_header import ChatHeader
 from vox_client.widgets.chat_input import ChatInput
 from vox_client.widgets.member_sidebar import MemberSidebar
 from vox_client.widgets.message_list import MessageList
 from vox_client.widgets.server_strip import ServerStrip
-from vox_client.widgets.user_panel import UserPanel
+from vox_client.widgets.user_panel import UserPanel, VoiceStatusBar
 
 
 class MainWindow(QMainWindow):
@@ -81,6 +89,10 @@ class MainWindow(QMainWindow):
         left_top_layout.addWidget(self._channel_sidebar)
 
         left_layout.addWidget(left_top, stretch=1)
+
+        # Voice status bar (hidden by default, shown when in a voice room)
+        self._voice_status_bar = VoiceStatusBar()
+        left_layout.addWidget(self._voice_status_bar)
 
         # User panel spans full 232px width
         self._user_panel = UserPanel()
@@ -130,14 +142,18 @@ class MainWindow(QMainWindow):
 
         # -- Wire signals ------------------------------------------------------
         self._channel_sidebar.feed_selected.connect(self._on_feed_selected)
+        self._channel_sidebar.room_selected.connect(self._on_room_selected)
         self._channel_sidebar.settings_clicked.connect(self._on_server_settings)
         self._chat_input.message_sent.connect(self._on_send)
         self._chat_input.typing.connect(self._on_local_typing)
         self._user_panel.settings_clicked.connect(self._on_settings)
         self._user_panel.login_clicked.connect(self._on_login_clicked)
+        self._voice_status_bar.disconnect_clicked.connect(self._on_voice_disconnect)
         self._state.layout_changed.connect(self._channel_sidebar.populate)
+        self._state.voice_state_changed.connect(self._channel_sidebar.populate)
         self._state.typing_started.connect(self._on_remote_typing)
         self._state.presence_updated.connect(self._on_presence_updated)
+        self._state.theme_changed.connect(self._on_theme_changed)
 
         # Show logged-out state initially
         self._user_panel.update_user()
@@ -146,15 +162,98 @@ class MainWindow(QMainWindow):
 
     @asyncSlot()
     async def try_restore_session(self) -> None:
-        """Attempt to restore a saved session on startup."""
+        """Attempt to restore a saved session on startup.
+
+        Only clears the saved token on authentication errors (401/403).
+        Transient network failures keep the token so the user can retry.
+        """
         saved = _load_session()
         if saved is None:
             return
         url, token, user_id = saved
         try:
             await self._post_login(url, token, user_id)
-        except Exception:
-            _clear_session()
+        except Exception as exc:
+            if _is_auth_error(exc):
+                _clear_session()
+            else:
+                self._show_restore_failed(url, token, user_id, exc)
+
+    def _show_restore_failed(
+        self, url: str, token: str, user_id: int, exc: Exception
+    ) -> None:
+        """Show a non-modal banner with a retry button when session restore
+        fails due to a transient error (network down, server unreachable)."""
+        c = self._state.theme.colors
+        msg = str(exc) or type(exc).__name__
+
+        # Remove any existing banner first
+        if hasattr(self, "_restore_banner") and self._restore_banner is not None:
+            self._restore_banner.deleteLater()
+
+        banner = QWidget()
+        banner.setObjectName("RestoreBanner")
+        banner.setStyleSheet(
+            f"#RestoreBanner {{ background-color: {c.status_warning}; }}"
+        )
+        banner.setFixedHeight(32)
+        lay = QHBoxLayout(banner)
+        lay.setContentsMargins(12, 0, 12, 0)
+        lay.setSpacing(8)
+
+        lbl = QLabel(f"Session restore failed: {msg}")
+        lbl.setStyleSheet(f"color: {c.bg_deep}; font-size: 11px; border: none;")
+        lay.addWidget(lbl, stretch=1)
+
+        from PyQt6.QtWidgets import QPushButton
+
+        retry_btn = QPushButton("[ RETRY ]")
+        retry_btn.setFixedHeight(22)
+        retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        retry_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.bg_deep}; font-size: 11px; font-weight: bold; "
+            f"border: 1px solid {c.bg_deep}; border-radius: 3px; padding: 2px 10px; "
+            f"background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_deep}; color: {c.status_warning}; }}"
+        )
+        retry_btn.clicked.connect(
+            lambda: self._retry_restore(url, token, user_id)
+        )
+        lay.addWidget(retry_btn)
+
+        dismiss_btn = QPushButton("[ DISMISS ]")
+        dismiss_btn.setFixedHeight(22)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.bg_deep}; font-size: 11px; "
+            f"border: none; padding: 2px 6px; background: transparent; }}"
+            f"QPushButton:hover {{ text-decoration: underline; }}"
+        )
+        dismiss_btn.clicked.connect(self._dismiss_restore_banner)
+        lay.addWidget(dismiss_btn)
+
+        self._restore_banner = banner
+
+        # Insert at top of central widget's layout
+        central = self.centralWidget()
+        if central and central.layout():
+            central.layout().insertWidget(0, banner)
+
+    def _dismiss_restore_banner(self) -> None:
+        if hasattr(self, "_restore_banner") and self._restore_banner is not None:
+            self._restore_banner.deleteLater()
+            self._restore_banner = None
+
+    @asyncSlot()
+    async def _retry_restore(self, url: str, token: str, user_id: int) -> None:
+        self._dismiss_restore_banner()
+        try:
+            await self._post_login(url, token, user_id)
+        except Exception as exc:
+            if _is_auth_error(exc):
+                _clear_session()
+            else:
+                self._show_restore_failed(url, token, user_id, exc)
 
     # -- public ----------------------------------------------------------------
 
@@ -201,24 +300,43 @@ class MainWindow(QMainWindow):
         gateway = await client.connect_gateway()
         state.set_gateway(gateway)
 
-        # Python 3.14 + qasync: _set_nodelay raises OSError on sockets managed
-        # by Qt's selector.  Patch only for the gateway task so httpx is unaffected.
-        _orig = asyncio.base_events._set_nodelay
+        # Run the gateway on a dedicated asyncio event loop in its own thread
+        # to avoid qasync incompatibility with Python 3.14 (_set_nodelay).
+        gw_loop = asyncio.new_event_loop()
+        self._gw_loop = gw_loop
+        gw_ready = threading.Event()
 
-        async def _run_gateway() -> None:
-            asyncio.base_events._set_nodelay = lambda _sock: None
-            try:
-                await gateway.run()
-            finally:
-                asyncio.base_events._set_nodelay = _orig
+        async def _gw_main() -> None:
+            async def _signal_ready() -> None:
+                await gateway._ready_event.wait()
+                gw_ready.set()
+            asyncio.create_task(_signal_ready())
+            await gateway.run()
 
-        asyncio.create_task(_run_gateway())
+        def _gw_thread() -> None:
+            asyncio.set_event_loop(gw_loop)
+            gw_loop.run_until_complete(_gw_main())
+
+        t = threading.Thread(target=_gw_thread, daemon=True)
+        t.start()
+
+        # Wait for gateway READY before proceeding
+        gw_ready.wait(timeout=10)
 
         # Set initial presence
         try:
-            await gateway.update_presence("online")
+            fut = asyncio.run_coroutine_threadsafe(
+                gateway.update_presence("online"), gw_loop,
+            )
+            fut.result(timeout=5)
         except Exception:
-            pass  # Non-critical if gateway hasn't connected yet
+            pass  # Non-critical
+
+        # Seed our own presence so the UI shows "Online" immediately
+        # (the server's presence_update echo arrives asynchronously).
+        state._presences[user_id] = PresenceResponse(
+            user_id=user_id, status="online",
+        )
 
         await state.load_server_data()
         self.populate()
@@ -235,6 +353,18 @@ class MainWindow(QMainWindow):
         self._typers.clear()
         self._typing_label.setText("")
         await self._message_list.load_messages(feed_id)
+
+    @asyncSlot(int)
+    async def _on_room_selected(self, room_id: int) -> None:
+        state = self._state
+        if state.voice_room_id == room_id:
+            await state.voice_leave()
+        else:
+            await state.voice_join(room_id)
+
+    @asyncSlot()
+    async def _on_voice_disconnect(self) -> None:
+        await self._state.voice_leave()
 
     @asyncSlot(str)
     async def _on_send(self, text: str) -> None:
@@ -289,8 +419,15 @@ class MainWindow(QMainWindow):
             return
         self._typing_throttle.start(5000)
         feed_id = self._state.current_feed_id
-        if feed_id is not None and self._state.gateway is not None:
-            await self._state.gateway.send_typing(feed_id)
+        gw = self._state.gateway
+        gw_loop = getattr(self, "_gw_loop", None)
+        if feed_id is not None and gw is not None and gw_loop is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    gw.send_typing(feed_id), gw_loop,
+                )
+            except Exception:
+                pass  # Gateway not yet connected
 
     # -- presence --------------------------------------------------------------
 
@@ -299,12 +436,74 @@ class MainWindow(QMainWindow):
         if uid == self._state.user_id:
             self._user_panel.update_user()
 
-    def _on_settings(self) -> None:
-        """Open hue picker dialog."""
-        from vox_client.widgets.hue_picker import HuePickerDialog
+    # -- theme -----------------------------------------------------------------
 
-        dlg = HuePickerDialog(self)
-        dlg.exec()
+    def _on_theme_changed(self) -> None:
+        """Re-apply inline styles on all widgets after a hue change."""
+        c = self._state.theme.colors
+
+        # Container-level inline styles
+        self._server_strip.restyle()
+        self._channel_sidebar.restyle()
+        self._voice_status_bar.restyle()
+        self._user_panel.restyle()
+        self._member_sidebar.restyle()
+        self._chat_header.restyle()
+        self._chat_input.restyle()
+        self._message_list.restyle()
+
+        # Chat column background
+        chat_col = self.findChild(QWidget, "ChatCol")
+        if chat_col is not None:
+            chat_col.setStyleSheet(f"#ChatCol {{ background-color: {c.bg_main}; }}")
+
+        # Typing indicator
+        self._typing_label.setStyleSheet(
+            f"color: {c.text_dim}; font-size: 11px; padding-left: 16px; "
+            f"background-color: {c.bg_main};"
+        )
+
+        # Rebuild child widgets (they pick up new colors at construction time)
+        self._server_strip.populate()
+        self._channel_sidebar.populate()
+        self._member_sidebar.refresh()
+        self._user_panel.update_user()
+
+    @asyncSlot()
+    async def _on_settings(self) -> None:
+        """Open user settings dialog."""
+        from vox_client.widgets.user_settings import UserSettingsDialog
+
+        dlg = UserSettingsDialog(self)
+        dlg.logout_requested.connect(self._on_logout)
+        dlg.setModal(True)
+        dlg.show()
+
+        future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
+        dlg.finished.connect(lambda _result: future.set_result(None))
+        await future
+
+    @asyncSlot()
+    async def _on_logout(self) -> None:
+        """Clear session and reset to logged-out state."""
+        state = self._state
+        # Leave voice room if connected
+        await state.voice_leave()
+        _clear_session()
+        state.client = None
+        state.gateway = None
+        state.user_id = None
+        state.current_feed_id = None
+        state._members.clear()
+        state._roles.clear()
+        state._presences.clear()
+        state._feeds.clear()
+        state._rooms.clear()
+        state._voice_room_members.clear()
+        state._layout = None
+        self._user_panel.update_user()
+        self._member_sidebar.refresh()
+        self._channel_sidebar.populate()
 
     @asyncSlot()
     async def _on_server_settings(self) -> None:

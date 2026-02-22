@@ -68,16 +68,16 @@ class ChatInput(QFrame):
         field_layout.setSpacing(0)
 
         # Plus button inside the field
-        plus_btn = QPushButton()
-        plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_secondary))
-        plus_btn.setIconSize(QSize(14, 14))
-        plus_btn.setFixedSize(22, 22)
-        plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        plus_btn.setStyleSheet(
+        self._plus_btn = QPushButton()
+        self._plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_secondary))
+        self._plus_btn.setIconSize(QSize(14, 14))
+        self._plus_btn.setFixedSize(22, 22)
+        self._plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._plus_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
             f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
-        field_layout.addWidget(plus_btn)
+        field_layout.addWidget(self._plus_btn)
 
         # Line edit (borderless, bg matches parent)
         self._input = QLineEdit()
@@ -101,6 +101,33 @@ class ChatInput(QFrame):
         self._hint.setFixedWidth(20)
         self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._hint)
+
+    def restyle(self) -> None:
+        """Re-apply inline styles after a theme change."""
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(
+            f"#ChatInput {{ background-color: {c.bg_main}; "
+            f"border-top: 1px solid {c.border}; }}"
+        )
+        field = self.findChild(QWidget, "InputField")
+        if field is not None:
+            field.setStyleSheet(
+                f"#InputField {{ background-color: {c.bg_input}; "
+                f"border: 1px solid {c.border}; border-radius: 4px; }}"
+            )
+        self._plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_secondary))
+        self._plus_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
+        )
+        self._input.setStyleSheet(
+            f"background: transparent; color: {c.text_primary}; "
+            f"border: none; padding: 6px 4px;"
+        )
+        self._hint.setStyleSheet(
+            f"color: {c.text_secondary}; font-size: 14px; background: transparent; "
+            f"border: none; padding-top: 2px;"
+        )
 
     def set_channel_name(self, name: str) -> None:
         self._input.setPlaceholderText(f"Message #{name}")
