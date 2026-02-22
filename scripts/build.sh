@@ -36,8 +36,9 @@ echo ""
 
 if [ "$(uname)" = "Darwin" ]; then
     echo "macOS app bundle: dist/Vox Client.app"
-    echo "  Launch: open \"dist/Vox Client.app\""
+    echo "  Launch:  open \"dist/Vox Client.app\""
+    echo "  Direct:  dist/Vox Client.app/Contents/MacOS/vox-client"
 else
-    echo "Distributable: dist/vox-client/"
-    echo "  Launch: dist/vox-client/vox-client"
+    echo "Linux distributable: dist/vox-client/"
+    echo "  Launch: ./dist/vox-client/vox-client"
 fi
