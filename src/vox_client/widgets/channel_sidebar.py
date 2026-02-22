@@ -15,15 +15,17 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QSlider,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 from qasync import asyncSlot
 
 from vox_sdk.permissions import ADMINISTRATOR, MANAGE_SERVER, MANAGE_SPACES
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
-from vox_client.state import AppState
+from vox_client.state import AppState, _log_volume
 from vox_client.widgets.avatar import AvatarWidget
 from vox_client.widgets.icons import tinted_icon
 from vox_client.widgets.ui_helpers import (
@@ -794,6 +796,7 @@ class _VoiceMemberEntry(QWidget):
 
     def __init__(self, user_id: int) -> None:
         super().__init__()
+        self.user_id = user_id
         self.setFixedHeight(22)
         state = AppState.instance()
         c = state.theme.colors
@@ -831,6 +834,56 @@ class _VoiceMemberEntry(QWidget):
             )
             mute_icon.setFixedSize(10, 10)
             layout.addWidget(mute_icon)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: ANN001
+        state = AppState.instance()
+        if self.user_id == state.user_id:
+            return  # no self-volume control
+
+        c = state.theme.colors
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background-color: {c.bg_panel}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 4px; padding: 4px; "
+            f"font-size: 12px; }}"
+            f"QMenu::item {{ padding: 6px 12px; border-radius: 3px; }}"
+            f"QMenu::item:selected {{ background-color: {c.bg_active}; }}"
+        )
+
+        slider_widget = QWidget()
+        slider_widget.setStyleSheet("background: transparent; border: none;")
+        sl = QHBoxLayout(slider_widget)
+        sl.setContentsMargins(8, 4, 8, 4)
+        sl.setSpacing(6)
+
+        label = QLabel("Volume")
+        label.setStyleSheet(f"color: {c.text_secondary}; font-size: 11px; border: none;")
+        sl.addWidget(label)
+
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(0, 200)
+        current = int(state.voice_get_user_volume(self.user_id) * 100)
+        slider.setValue(current)
+        sl.addWidget(slider, stretch=1)
+
+        pct_label = QLabel(f"{current}%")
+        pct_label.setFixedWidth(32)
+        pct_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pct_label.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        sl.addWidget(pct_label)
+
+        uid = self.user_id
+
+        def on_change(val: int) -> None:
+            pct_label.setText(f"{val}%")
+            state.voice_set_user_volume(uid, _log_volume(val))
+
+        slider.valueChanged.connect(on_change)
+
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(slider_widget)
+        menu.addAction(action)
+        menu.exec(event.globalPos())
 
 
 

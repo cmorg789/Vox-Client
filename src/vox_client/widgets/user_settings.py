@@ -25,7 +25,7 @@ from qasync import asyncSlot
 from vox_sdk.models.enums import DMPermission
 from vox_sdk.permissions import CHANGE_NICKNAME
 
-from vox_client.state import AppState
+from vox_client.state import AppState, _log_volume
 from vox_client.theme import save_flavor
 from vox_client.widgets.base_settings_dialog import BaseSettingsDialog
 from vox_client.widgets.icons import tinted_icon
@@ -337,19 +337,6 @@ class _AppearancePage(QWidget):
                 save_flavor(flavor_id)
                 state.theme_changed.emit()
                 break
-
-
-def _log_volume(percent: int) -> float:
-    """Convert a linear slider value (0–200) to a perceptual log volume (0.0–2.0).
-
-    Uses an exponential curve so the midpoint (~100) sounds like "half loud"
-    rather than half amplitude.  Returns 0.0 for 0% (true silence).
-    """
-    import math
-    if percent <= 0:
-        return 0.0
-    t = percent / 200.0
-    return 2.0 * (math.pow(10, t) - 1) / 9.0
 
 
 # -- Mic Sensitivity Slider with live level overlay --------------------------
@@ -887,6 +874,11 @@ class _AudioVideoPage(QWidget):
         settings.setValue("av/noise_gate", self._mic_slider.value())
         settings.setValue("av/input_volume", self._input_vol_slider.value())
         settings.setValue("av/output_volume", self._output_vol_slider.value())
+        # Push to live media client if in a voice call
+        state = AppState.instance()
+        state.voice_set_input_volume(_log_volume(self._input_vol_slider.value()))
+        state.voice_set_output_volume(_log_volume(self._output_vol_slider.value()))
+        state.voice_set_noise_gate(self._mic_slider.value() / 100.0)
         set_status(self._status, "saved", "success")
 
     def showEvent(self, event) -> None:  # noqa: ANN001

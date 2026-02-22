@@ -20,6 +20,19 @@ log = logging.getLogger(__name__)
 from vox_client.theme import Theme, role_color_for_int
 
 
+def _log_volume(percent: int) -> float:
+    """Convert a linear slider value (0–200) to a perceptual log volume (0.0–2.0).
+
+    Uses an exponential curve so the midpoint (~100) sounds like "half loud"
+    rather than half amplitude.  Returns 0.0 for 0% (true silence).
+    """
+    import math
+    if percent <= 0:
+        return 0.0
+    t = percent / 200.0
+    return 2.0 * (math.pow(10, t) - 1) / 9.0
+
+
 class AppState(QObject):
     """Singleton holding the SDK client, gateway, caches, and bridged signals."""
 
@@ -76,6 +89,7 @@ class AppState(QObject):
         self._media_client: object | None = None  # VoxMediaClient, lazy-imported
         self.voice_self_mute: bool = False
         self.voice_self_deaf: bool = False
+        self._user_volumes: dict[int, float] = {}  # user_id → log volume (session-local)
 
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
@@ -171,6 +185,15 @@ class AppState(QObject):
                 mc.start()
                 mc.set_mute(self.voice_self_mute)
                 mc.set_deaf(self.voice_self_deaf)
+                # Apply saved AV settings
+                from PyQt6.QtCore import QSettings
+                settings = QSettings("Vox", "VoxClient")
+                input_vol = settings.value("av/input_volume", 100, type=int)
+                output_vol = settings.value("av/output_volume", 100, type=int)
+                gate = settings.value("av/noise_gate", 30, type=int)
+                mc.set_input_volume(_log_volume(input_vol))
+                mc.set_output_volume(_log_volume(output_vol))
+                mc.set_noise_gate(gate / 100.0)
                 mc.connect(
                     url=resp.media_url,
                     token=resp.media_token,
@@ -223,6 +246,38 @@ class AppState(QObject):
                 self._media_client.set_deaf(deafened)
             except Exception:
                 pass
+
+    def voice_set_input_volume(self, volume: float) -> None:
+        if self._media_client is not None:
+            try:
+                self._media_client.set_input_volume(volume)
+            except Exception:
+                pass
+
+    def voice_set_output_volume(self, volume: float) -> None:
+        if self._media_client is not None:
+            try:
+                self._media_client.set_output_volume(volume)
+            except Exception:
+                pass
+
+    def voice_set_noise_gate(self, threshold: float) -> None:
+        if self._media_client is not None:
+            try:
+                self._media_client.set_noise_gate(threshold)
+            except Exception:
+                pass
+
+    def voice_set_user_volume(self, user_id: int, volume: float) -> None:
+        self._user_volumes[user_id] = volume
+        if self._media_client is not None:
+            try:
+                self._media_client.set_user_volume(user_id, volume)
+            except Exception:
+                pass
+
+    def voice_get_user_volume(self, user_id: int) -> float:
+        return self._user_volumes.get(user_id, 1.0)
 
     async def refresh_layout(self) -> None:
         """Re-fetch the server layout and rebuild all layout caches."""
