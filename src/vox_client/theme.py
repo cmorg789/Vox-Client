@@ -1,20 +1,21 @@
-"""HSL hue-based theming system for Vox Client."""
+"""Catppuccin-based theming system for Vox Client."""
 
 from __future__ import annotations
 
-import colorsys
 from dataclasses import dataclass
 
+from catppuccin import PALETTE
 from PyQt6.QtCore import QSettings
 
 
-def hsl_to_hex(h: float, s: float, l: float) -> str:
-    """Convert HSL (0-360, 0-100, 0-100) to #RRGGBB hex string.
-
-    ``colorsys`` uses HLS order with 0-1 ranges, so we swap s/l and scale.
-    """
-    r, g, b = colorsys.hls_to_rgb(h / 360, l / 100, s / 100)
-    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+def _blend_hex(fg: str, bg: str, alpha: float) -> str:
+    """Blend *fg* over *bg* at the given *alpha* (0-1). Returns #RRGGBB."""
+    fr, fg_g, fb = int(fg[1:3], 16), int(fg[3:5], 16), int(fg[5:7], 16)
+    br, bg_g, bb = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
+    r = int(fr * alpha + br * (1 - alpha))
+    g = int(fg_g * alpha + bg_g * (1 - alpha))
+    b = int(fb * alpha + bb * (1 - alpha))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 @dataclass(frozen=True)
@@ -38,77 +39,91 @@ class ThemeColors:
     text_secondary: str
     text_dim: str
 
-    # Accent (hue-derived)
+    # Accent
     accent: str
     accent_dim: str
     accent_bright: str
 
-    # Role colors (monochromatic tiers)
-    role_1: str
-    role_2: str
-    role_3: str
-    role_4: str
+    # Role colors
+    role_admin: str
+    role_mod: str
+    role_dev: str
+    role_member: str
 
     # Status / semantic
     status_success: str
     status_danger: str
+    status_danger_dim: str
     status_warning: str
     status_idle: str
     status_offline: str
 
+    # Computed blends
+    mention_bg: str
+
 
 class Theme:
-    """Generates a full set of theme colors and QSS from a single hue value."""
+    """Generates a full set of theme colors and QSS from a Catppuccin flavor."""
 
-    def __init__(self, hue: int = 28) -> None:
-        self.hue = hue
-        self.colors = self._compute_colors(hue)
+    def __init__(self, flavor: str = "mocha") -> None:
+        self.flavor = flavor
+        self.colors = self._compute_colors(flavor)
 
     @staticmethod
-    def _compute_colors(hue: int) -> ThemeColors:
-        h = hue
+    def _compute_colors(flavor: str) -> ThemeColors:
+        f = getattr(PALETTE, flavor)
+        c = f.colors
+
+        crust = c.crust.hex
+        base = c.base.hex
+        mantle = c.mantle.hex
+        flamingo = c.flamingo.hex
+
         return ThemeColors(
             # Backgrounds
-            bg_deep=hsl_to_hex(h, 20, 4),
-            bg_main=hsl_to_hex(h, 18, 7),
-            bg_panel=hsl_to_hex(h, 16, 9),
-            bg_input=hsl_to_hex(h, 20, 5),
-            bg_hover=hsl_to_hex(h, 18, 12),
-            bg_active=hsl_to_hex(h, 22, 15),
+            bg_deep=crust,
+            bg_main=base,
+            bg_panel=mantle,
+            bg_input=crust,
+            bg_hover=c.surface0.hex,
+            bg_active=c.surface1.hex,
             # Borders
-            border=hsl_to_hex(h, 16, 14),
-            border_bright=hsl_to_hex(h, 20, 20),
+            border=c.surface0.hex,
+            border_bright=c.surface1.hex,
             # Text
-            text_primary=hsl_to_hex(h, 12, 75),
-            text_secondary=hsl_to_hex(h, 14, 45),
-            text_dim=hsl_to_hex(h, 12, 28),
+            text_primary=c.text.hex,
+            text_secondary=c.subtext0.hex,
+            text_dim=c.overlay0.hex,
             # Accent
-            accent=hsl_to_hex(h, 70, 50),
-            accent_dim=hsl_to_hex(h, 50, 25),
-            accent_bright=hsl_to_hex(h, 75, 65),
-            # Monochromatic role tiers
-            role_1=hsl_to_hex(h, 80, 72),
-            role_2=hsl_to_hex(h, 65, 62),
-            role_3=hsl_to_hex(h, 50, 52),
-            role_4=hsl_to_hex(h, 30, 45),
-            # Status / semantic (fixed hex)
-            status_success="#409640",
-            status_danger="#c63939",
-            status_warning="#c6a839",
-            status_idle=hsl_to_hex(h, 40, 45),
-            status_offline=hsl_to_hex(h, 8, 30),
+            accent=c.mauve.hex,
+            accent_dim=c.surface2.hex,
+            accent_bright=c.lavender.hex,
+            # Role colors
+            role_admin=c.red.hex,
+            role_mod=c.peach.hex,
+            role_dev=c.blue.hex,
+            role_member=c.subtext1.hex,
+            # Status / semantic
+            status_success=c.green.hex,
+            status_danger=c.red.hex,
+            status_danger_dim=_blend_hex(flamingo, crust, 0.20),
+            status_warning=c.yellow.hex,
+            status_idle=c.overlay1.hex,
+            status_offline=c.surface2.hex,
+            # Computed blends
+            mention_bg=_blend_hex(c.mauve.hex, base, 0.15),
         )
 
-    def set_hue(self, hue: int) -> None:
-        self.hue = hue
-        self.colors = self._compute_colors(hue)
+    def set_flavor(self, flavor: str) -> None:
+        self.flavor = flavor
+        self.colors = self._compute_colors(flavor)
 
     # -- QSS generation ------------------------------------------------------
 
     def generate_qss(self) -> str:
         c = self.colors
         return f"""
-/* Vox Theme – generated from hue {self.hue} */
+/* Vox Theme – {self.flavor} */
 
 * {{
     font-family: "JetBrains Mono";
@@ -131,34 +146,36 @@ QLineEdit, QTextEdit {{
     color: {c.text_primary};
     border: 1px solid {c.border};
     border-radius: 4px;
-    padding: 6px 8px;
+    padding: 8px 4px;
     selection-background-color: {c.accent_dim};
     selection-color: {c.text_primary};
 }}
 
 QLineEdit:focus, QTextEdit:focus {{
-    border-color: {c.accent_dim};
+    border-color: {c.accent};
 }}
 
 /* ---------- Buttons ---------- */
 
 QPushButton {{
     background-color: transparent;
-    color: {c.accent};
+    color: {c.text_secondary};
     border: 1px solid {c.border};
     border-radius: 4px;
-    padding: 6px 14px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 500;
 }}
 
 QPushButton:hover {{
     background-color: {c.bg_hover};
-    color: {c.accent_bright};
-    border-color: {c.accent_dim};
+    color: {c.text_primary};
+    border-color: {c.border_bright};
 }}
 
 QPushButton:pressed {{
-    background-color: {c.accent};
-    color: {c.bg_deep};
+    background-color: {c.bg_active};
+    color: {c.text_primary};
 }}
 
 QPushButton:disabled {{
@@ -189,7 +206,7 @@ QListWidget {{
 QListWidget::item {{
     padding: 3px 8px;
     border: none;
-    color: {c.text_dim};
+    color: {c.text_secondary};
 }}
 
 QListWidget::item:selected {{
@@ -210,13 +227,13 @@ QScrollArea {{
 }}
 
 QScrollBar:vertical {{
-    background-color: transparent;
+    background-color: {c.bg_hover};
     width: 6px;
     margin: 0px;
 }}
 
 QScrollBar::handle:vertical {{
-    background-color: {c.border};
+    background-color: {c.accent_dim};
     min-height: 20px;
     border-radius: 3px;
 }}
@@ -250,21 +267,22 @@ QSplitter::handle {{
     width: 1px;
 }}
 
-/* ---------- Slider (hue picker) ---------- */
+/* ---------- Slider ---------- */
 
 QSlider::groove:horizontal {{
     border: none;
     height: 4px;
-    background: {c.border_bright};
+    background: {c.bg_deep};
     border-radius: 2px;
 }}
 
 QSlider::handle:horizontal {{
-    background: {c.accent};
-    width: 14px;
-    height: 14px;
-    margin: -5px 0;
-    border-radius: 7px;
+    background: {c.accent_bright};
+    border: 2px solid {c.bg_deep};
+    width: 12px;
+    height: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
 }}
 
 QSlider::handle:horizontal:hover {{
@@ -289,14 +307,14 @@ def role_color_for_int(color_int: int | None) -> str | None:
 
 # -- Persistence helpers -----------------------------------------------------
 
-_SETTINGS_KEY = "theme/hue"
+_SETTINGS_KEY = "appearance/flavor"
 
 
-def load_saved_hue() -> int:
+def load_saved_flavor() -> str:
     settings = QSettings("Vox", "VoxClient")
-    return int(settings.value(_SETTINGS_KEY, 28))
+    return str(settings.value(_SETTINGS_KEY, "mocha"))
 
 
-def save_hue(hue: int) -> None:
+def save_flavor(flavor: str) -> None:
     settings = QSettings("Vox", "VoxClient")
-    settings.setValue(_SETTINGS_KEY, hue)
+    settings.setValue(_SETTINGS_KEY, flavor)
