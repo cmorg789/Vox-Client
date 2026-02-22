@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
+    "pyinstaller>=6.0",
 ]
 
 [project.scripts]
