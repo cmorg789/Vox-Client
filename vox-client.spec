@@ -2,14 +2,16 @@
 """PyInstaller spec for Vox Client – onedir build with macOS .app bundle."""
 
 import sys
+import warnings
 from PyInstaller.utils.hooks import collect_dynamic_libs
-
-block_cipher = None
 
 # Collect the native vox_media Rust extension (.so / .pyd)
 try:
     vox_media_binaries = collect_dynamic_libs("vox_media")
+    if not vox_media_binaries:
+        warnings.warn("vox_media found but no dynamic libs collected — native media may not work!")
 except Exception:
+    warnings.warn("Could not collect vox_media binaries — native media will not work!")
     vox_media_binaries = []
 
 a = Analysis(
@@ -99,10 +101,9 @@ a = Analysis(
     excludes=["tkinter", "unittest", "test", "xmlrpc"],
     noarchive=False,
     optimize=0,
-    cipher=block_cipher,
 )
 
-pyz = PYZ(a.pure, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
