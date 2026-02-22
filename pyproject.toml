@@ -11,7 +11,8 @@ dependencies = [
     "qasync>=0.27",
     "catppuccin==2.5",
     # vox-sdk is distributed via GitHub Releases (not PyPI).
-    # Install with: pip install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e '.[dev]'
+    # First: gh release download --repo cmorg789/vox-py-sdk --pattern "*.whl" --dir sdk-wheels
+    # Then:  pip install --find-links sdk-wheels/ -e '.[dev]'
     "vox-sdk[media]>=0.1",
 ]
 

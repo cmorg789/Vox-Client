@@ -34,17 +34,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
 
+      - name: Download SDK wheels
+        run: gh release download --repo cmorg789/vox-py-sdk --pattern "*.whl" --dir sdk-wheels
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Create venv and install deps
         if: runner.os != 'Windows'
         run: |
           python -m venv .venv
-          .venv/bin/pip install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e ".[dev]"
+          .venv/bin/pip install --find-links sdk-wheels/ -e ".[dev]"
 
       - name: Create venv and install deps (Windows)
         if: runner.os == 'Windows'
         run: |
           python -m venv .venv
-          .venv\Scripts\pip install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e ".[dev]"
+          .venv\Scripts\pip install --find-links sdk-wheels/ -e ".[dev]"
 
       - name: Build with PyInstaller
         run: .venv/bin/python -m PyInstaller vox-client.spec --noconfirm

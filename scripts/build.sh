@@ -16,9 +16,14 @@ fi
 
 PYTHON="$VENV/bin/python"
 
-# Install project + SDK from GitHub Packages
+# Download SDK wheels from GitHub Releases
+echo "Fetching SDK wheels..."
+mkdir -p sdk-wheels
+gh release download --repo cmorg789/vox-py-sdk --pattern "*.whl" --dir sdk-wheels --clobber
+
+# Install project + SDK
 echo "Installing dependencies..."
-"$VENV/bin/pip" install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e ".[dev]" --quiet
+"$VENV/bin/pip" install --find-links sdk-wheels/ -e ".[dev]" --quiet
 
 # Ensure pyinstaller is installed
 if ! "$PYTHON" -m PyInstaller --version &>/dev/null; then
