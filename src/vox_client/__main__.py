@@ -22,17 +22,19 @@ def main() -> None:
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
 
-    # Warm up the multimedia backend so the first settings open isn't slow.
-    # The FFmpeg plugin loads lazily on first *use*, not on import — calling
-    # audioInputs() forces the plugin to load now.
-    try:
-        from PyQt6.QtMultimedia import QMediaDevices
-        QMediaDevices.audioInputs()
-    except Exception:
-        pass  # multimedia backend unavailable or permissions not yet granted
-
     vox_app = VoxApp(qt_app)
     vox_app.show_main()
+
+    # Warm up the multimedia backend so the first settings open isn't slow.
+    # Deferred so it doesn't block window creation (can hang on some Linux setups).
+    from PyQt6.QtCore import QTimer
+    def _warmup_multimedia() -> None:
+        try:
+            from PyQt6.QtMultimedia import QMediaDevices
+            QMediaDevices.audioInputs()
+        except Exception:
+            pass
+    QTimer.singleShot(0, _warmup_multimedia)
 
     with loop:
         loop.run_forever()
