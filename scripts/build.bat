@@ -22,7 +22,7 @@ set "PYTHON=%VENV%\Scripts\python.exe"
 
 :: Install project + SDK from GitHub Packages
 echo Installing dependencies...
-"%VENV%\Scripts\pip.exe" install --extra-index-url https://pypi.pkg.github.com/cmorg789/ -e ".[dev]" --quiet
+"%VENV%\Scripts\pip.exe" install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e ".[dev]" --quiet
 
 :: Ensure pyinstaller is installed
 "%PYTHON%" -m PyInstaller --version >nul 2>&1

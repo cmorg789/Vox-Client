@@ -18,7 +18,7 @@ PYTHON="$VENV/bin/python"
 
 # Install project + SDK from GitHub Packages
 echo "Installing dependencies..."
-"$VENV/bin/pip" install --extra-index-url https://pypi.pkg.github.com/cmorg789/ -e ".[dev]" --quiet
+"$VENV/bin/pip" install --find-links https://github.com/cmorg789/vox-py-sdk/releases/latest/download/ -e ".[dev]" --quiet
 
 # Ensure pyinstaller is installed
 if ! "$PYTHON" -m PyInstaller --version &>/dev/null; then
