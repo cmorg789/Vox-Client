@@ -824,7 +824,7 @@ class _AudioVideoPage(QWidget):
     def _on_camera_denied(self) -> None:
         if sys.platform == "darwin":
             self._camera_preview.setText(
-                "Camera access denied — grant access in System Settings → Privacy & Security → Camera"
+                "Camera access denied\nGrant access in System Settings\n→ Privacy & Security → Camera"
             )
         else:
             self._camera_preview.setText("Camera access denied")
@@ -859,7 +859,7 @@ class _AudioVideoPage(QWidget):
     def _on_camera_error(self, error, description: str) -> None:  # noqa: ANN001
         msg = description or "Camera error"
         if sys.platform == "darwin":
-            msg += "\nGrant camera access to Terminal in System Settings → Privacy & Security → Camera"
+            msg += "\nGrant camera access in System Settings\n→ Privacy & Security → Camera"
         self._camera_preview.setText(msg)
 
     def _on_video_frame(self, frame) -> None:  # noqa: ANN001
