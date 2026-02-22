@@ -68,7 +68,7 @@ class VoiceStatusBar(QFrame):
         # Room name
         self._room_label = QLabel()
         self._room_label.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 11px; font-weight: 600;"
+            f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
         layout.addWidget(self._room_label, stretch=1)
 
@@ -108,7 +108,7 @@ class VoiceStatusBar(QFrame):
             _tinted_icon(_ICONS_DIR / "headphones.svg", c.status_success, size=14).pixmap(QSize(14, 14))
         )
         self._room_label.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 11px; font-weight: 600;"
+            f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
         self._disconnect_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
         self._disconnect_btn.setStyleSheet(
@@ -189,7 +189,7 @@ class UserPanel(QFrame):
 
         self._name_label = QLabel()
         self._name_label.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 11px; font-weight: 600;"
+            f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
         self._name_label.setMinimumWidth(0)
         info_layout.addWidget(self._name_label)
@@ -271,7 +271,7 @@ class UserPanel(QFrame):
         )
         # Logged-in elements
         self._name_label.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 11px; font-weight: 600;"
+            f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
         self._status_label.setStyleSheet(f"color: {c.text_dim}; font-size: 10px;")
         self._btn_style = (
@@ -294,13 +294,13 @@ class UserPanel(QFrame):
         # Re-tint icons and apply correct style based on toggle state
         if self._muted:
             self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone-off.svg", c.status_danger, size=18))
-            self._mute_btn.setStyleSheet(self._btn_style_active)
+            self._mute_btn.setStyleSheet(self._btn_style_danger)
         else:
             self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
             self._mute_btn.setStyleSheet(self._btn_style)
         if self._deafened:
             self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones-off.svg", c.status_danger, size=18))
-            self._deafen_btn.setStyleSheet(self._btn_style_active)
+            self._deafen_btn.setStyleSheet(self._btn_style_danger)
         else:
             self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style)

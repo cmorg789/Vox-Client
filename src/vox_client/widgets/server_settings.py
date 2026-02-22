@@ -108,7 +108,7 @@ def _action_button(text: str, width: int = 110) -> QPushButton:
     btn.setStyleSheet(
         f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
         f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
         f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
         f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
     )
@@ -125,7 +125,7 @@ def _danger_button(text: str, width: int = 110) -> QPushButton:
         f"QPushButton {{ background-color: {c.status_danger_dim}; "
         f"border: 1px solid {c.status_danger}; color: {c.status_danger}; "
         f"border-radius: 4px; padding: 4px 12px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.status_danger}; color: white; }}"
+        f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
         f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; "
         f"background: transparent; }}"
     )
@@ -1053,7 +1053,7 @@ class ServerSettingsDialog(QDialog):
             wrapper = QWidget()
             wrapper.setStyleSheet("background: transparent; border: none;")
             w_layout = QVBoxLayout(wrapper)
-            w_layout.setContentsMargins(20, 12, 20, 16)
+            w_layout.setContentsMargins(20, 16, 20, 16)
             w_layout.setSpacing(0)
             w_layout.addWidget(page)
             self._stack.addWidget(wrapper)

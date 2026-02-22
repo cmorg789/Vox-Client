@@ -250,7 +250,7 @@ class _CreateSpaceDialog(QDialog):
         self._create_btn.setStyleSheet(
             f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
             f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
             f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
         )
         self._create_btn.clicked.connect(self._on_create)
@@ -365,7 +365,7 @@ class _RenameDialog(QDialog):
         self._save_btn.setStyleSheet(
             f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
             f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
             f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
         )
         self._save_btn.clicked.connect(self._on_save)
@@ -501,7 +501,7 @@ class _CreateCategoryDialog(QDialog):
         self._create_btn.setStyleSheet(
             f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
             f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
             f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
         )
         self._create_btn.clicked.connect(self._on_create)
@@ -562,7 +562,7 @@ class _CategoryHeader(QWidget):
         c = state.theme.colors
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(6, 8, 6, 2)
+        row.setContentsMargins(12, 4, 12, 4)
         row.setSpacing(2)
 
         # Collapse arrow
@@ -584,9 +584,9 @@ class _CategoryHeader(QWidget):
         # "+" button (only if user can manage)
         if can_manage:
             self._plus_btn = QPushButton()
-            self._plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=12))
-            self._plus_btn.setIconSize(QSize(12, 12))
-            self._plus_btn.setFixedSize(16, 16)
+            self._plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
+            self._plus_btn.setIconSize(QSize(14, 14))
+            self._plus_btn.setFixedSize(18, 18)
             self._plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._plus_btn.setStyleSheet("border: none; background: transparent;")
             self._plus_btn.clicked.connect(self._on_plus_clicked)
@@ -665,7 +665,7 @@ class _CategoryHeader(QWidget):
         rename_act = menu.addAction("Rename Category")
         menu.addSeparator()
         delete_act = menu.addAction("Delete Category")
-        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=12))
+        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
 
         action = menu.exec(event.globalPos())
         if action is None:
@@ -847,7 +847,7 @@ class _ChannelItem(QWidget):
         rename_act = menu.addAction("Rename")
         menu.addSeparator()
         delete_act = menu.addAction("Delete")
-        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=12))
+        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
 
         action = menu.exec(event.globalPos())
         if action is None:
@@ -973,8 +973,8 @@ class ChannelSidebar(QWidget):
 
         # "+" button for creating categories (permission-gated, populated in populate())
         self._add_category_btn = QPushButton()
-        self._add_category_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
-        self._add_category_btn.setIconSize(QSize(14, 14))
+        self._add_category_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=16))
+        self._add_category_btn.setIconSize(QSize(16, 16))
         self._add_category_btn.setFixedSize(24, 24)
         self._add_category_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._add_category_btn.setStyleSheet(
@@ -986,7 +986,7 @@ class ChannelSidebar(QWidget):
 
         self._settings_btn = QPushButton()
         self._settings_btn.setIcon(_tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim))
-        self._settings_btn.setIconSize(QSize(14, 14))
+        self._settings_btn.setIconSize(QSize(16, 16))
         self._settings_btn.setFixedSize(24, 24)
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._settings_btn.setStyleSheet(

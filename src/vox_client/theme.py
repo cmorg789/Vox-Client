@@ -58,7 +58,8 @@ class ThemeColors:
     status_idle: str
     status_offline: str
 
-    # Computed blends
+    # Computed
+    text_on_accent: str
     mention_bg: str
 
 
@@ -110,7 +111,8 @@ class Theme:
             status_warning=c.yellow.hex,
             status_idle=c.overlay1.hex,
             status_offline=c.surface2.hex,
-            # Computed blends
+            # Computed
+            text_on_accent=c.text.hex if flavor == "latte" else "#ffffff",
             mention_bg=_blend_hex(c.mauve.hex, base, 0.15),
         )
 
@@ -239,7 +241,7 @@ QScrollBar::handle:vertical {{
 }}
 
 QScrollBar::handle:vertical:hover {{
-    background-color: {c.border_bright};
+    background-color: {c.accent_dim};
 }}
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
@@ -272,7 +274,7 @@ QSplitter::handle {{
 QSlider::groove:horizontal {{
     border: none;
     height: 4px;
-    background: {c.bg_deep};
+    background: {c.bg_input};
     border-radius: 2px;
 }}
 

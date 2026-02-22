@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from pathlib import Path
+
+from PyQt6.QtCore import QRectF, QSize, Qt
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -18,6 +22,24 @@ from vox_sdk import Client
 from vox_sdk.models.auth import MFARequiredResponse
 
 from vox_client.state import AppState
+
+_ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
+
+
+def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
+    """Load an SVG and return a QIcon with paths filled in *color*."""
+    svg_text = svg_path.read_text()
+    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
+    renderer = QSvgRenderer(svg_text.encode())
+    scale = 2
+    px = size * scale
+    pixmap = QPixmap(px, px)
+    pixmap.setDevicePixelRatio(scale)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.end()
+    return QIcon(pixmap)
 
 
 def _field_label(text: str) -> QLabel:
@@ -51,21 +73,38 @@ class LoginDialog(QDialog):
         self.setFixedSize(380, 360)
         self.setStyleSheet(
             f"LoginDialog {{ background-color: {c.bg_panel}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
+            f"border: 1px solid {c.border}; border-radius: 6px; }}"
         )
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 16, 20, 16)
         outer.setSpacing(4)
 
-        # Title
+        # Header row: title + close button
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(0)
+
         self._title_label = QLabel("LOGIN")
-        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_label.setStyleSheet(
             f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
             f"padding-bottom: 8px; border: none;"
         )
-        outer.addWidget(self._title_label)
+        header_row.addWidget(self._title_label, stretch=1)
+
+        close_btn = QPushButton()
+        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
+        close_btn.setIconSize(QSize(18, 18))
+        close_btn.setFixedSize(28, 28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; border-radius: 3px; padding: 0px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
+        )
+        close_btn.clicked.connect(self.reject)
+        header_row.addWidget(close_btn)
+
+        outer.addLayout(header_row)
 
         # -- Server URL
         outer.addWidget(_field_label("server"))
@@ -125,7 +164,7 @@ class LoginDialog(QDialog):
         self._action_btn.setStyleSheet(
             f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
             f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
             f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
             f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
         )

@@ -87,7 +87,7 @@ def _action_button(text: str, width: int = 110) -> QPushButton:
     btn.setStyleSheet(
         f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
         f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: white; }}"
+        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
         f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
         f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
     )
@@ -119,7 +119,7 @@ def _danger_button(text: str, width: int = 110) -> QPushButton:
         f"QPushButton {{ background-color: {c.status_danger_dim}; "
         f"border: 1px solid {c.status_danger}; color: {c.status_danger}; "
         f"border-radius: 4px; padding: 4px 12px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.status_danger}; color: white; }}"
+        f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
         f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; "
         f"background: transparent; }}"
     )
@@ -398,7 +398,7 @@ class _AppearancePage(QWidget):
             text_col.setSpacing(0)
             name_lbl = QLabel(display_name)
             name_lbl.setStyleSheet(
-                f"color: {c.text_primary}; font-size: 12px; font-weight: 600; border: none;"
+                f"color: {c.text_primary}; font-size: 13px; font-weight: 600; border: none;"
             )
             text_col.addWidget(name_lbl)
             desc_lbl = QLabel(description)
@@ -1349,7 +1349,7 @@ class _AboutPage(QWidget):
 
 _NAV_ITEMS = [
     ("Account", "account.svg"),
-    ("Audio & Video", "video.svg"),
+    ("Audio && Video", "video.svg"),
     ("Privacy", "account-cancel.svg"),
     ("Appearance", "cog.svg"),
     ("About", "card-account-details.svg"),
