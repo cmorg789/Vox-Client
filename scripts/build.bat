@@ -20,14 +20,9 @@ if not exist "%VENV%\" (
 
 set "PYTHON=%VENV%\Scripts\python.exe"
 
-:: Download SDK wheels from GitHub Releases
-echo Fetching SDK wheels...
-if not exist sdk-wheels mkdir sdk-wheels
-gh release download --repo cmorg789/vox-py-sdk --pattern "*.whl" --dir sdk-wheels --clobber
-
-:: Install project + SDK
+:: Install project + SDK (vox-sdk is on PyPI)
 echo Installing dependencies...
-"%VENV%\Scripts\pip.exe" install --find-links sdk-wheels\ -e ".[dev]" --quiet
+"%VENV%\Scripts\pip.exe" install -e ".[dev]" --quiet
 
 :: Ensure pyinstaller is installed
 "%PYTHON%" -m PyInstaller --version >nul 2>&1
