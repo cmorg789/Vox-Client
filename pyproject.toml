@@ -9,7 +9,13 @@ requires-python = ">=3.14"
 dependencies = [
     "PyQt6>=6.8",
     "qasync>=0.27",
-    "vox-sdk @ git+https://github.com/cmorg789/vox-py-sdk.git",
+    "catppuccin==2.5",
+    "vox-sdk[media] @ git+https://github.com/cmorg789/vox-py-sdk.git",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
