@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayou
 
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
+from vox_client.widgets.ui_helpers import clear_layout
 
 
 class _MemberItem(QWidget):
@@ -111,10 +112,7 @@ class MemberSidebar(QFrame):
         c = state.theme.colors
 
         # Clear
-        while self._list_layout.count():
-            child = self._list_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        clear_layout(self._list_layout)
 
         # Group members by status
         online: list[int] = []

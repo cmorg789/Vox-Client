@@ -2,36 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
-
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    from PyQt6.QtCore import QRectF
-    from PyQt6.QtGui import QPainter
-
-    svg_text = svg_path.read_text()
-    # Inject fill attribute on the root <svg> element
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2  # render at 2x for HiDPI
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
+from vox_client.widgets.icons import tinted_icon
 
 
 class VoiceStatusBar(QFrame):
@@ -59,7 +36,7 @@ class VoiceStatusBar(QFrame):
         # Connection indicator (headphones icon tinted green)
         self._conn_icon = QLabel()
         self._conn_icon.setPixmap(
-            _tinted_icon(_ICONS_DIR / "headphones.svg", c.status_success, size=14).pixmap(QSize(14, 14))
+            tinted_icon(_ICONS_DIR / "headphones.svg", c.status_success, size=14).pixmap(QSize(14, 14))
         )
         self._conn_icon.setFixedSize(14, 14)
         layout.addWidget(self._conn_icon)
@@ -73,7 +50,7 @@ class VoiceStatusBar(QFrame):
 
         # Disconnect button
         self._disconnect_btn = QPushButton()
-        self._disconnect_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
+        self._disconnect_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
         self._disconnect_btn.setIconSize(QSize(12, 12))
         self._disconnect_btn.setFixedSize(20, 20)
         self._disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -104,12 +81,12 @@ class VoiceStatusBar(QFrame):
             f"border-left: 2px solid {c.status_success}; }}"
         )
         self._conn_icon.setPixmap(
-            _tinted_icon(_ICONS_DIR / "headphones.svg", c.status_success, size=14).pixmap(QSize(14, 14))
+            tinted_icon(_ICONS_DIR / "headphones.svg", c.status_success, size=14).pixmap(QSize(14, 14))
         )
         self._room_label.setStyleSheet(
             f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
-        self._disconnect_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
+        self._disconnect_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
         self._disconnect_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; border-radius: 3px; }}"
             f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
@@ -224,7 +201,7 @@ class UserPanel(QFrame):
         self._deafened = False
 
         self._mute_btn = QPushButton()
-        self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
+        self._mute_btn.setIcon(tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
         self._mute_btn.setIconSize(QSize(18, 18))
         self._mute_btn.setFixedSize(24, 24)
         self._mute_btn.setToolTip("Mute")
@@ -233,7 +210,7 @@ class UserPanel(QFrame):
         li_layout.addWidget(self._mute_btn)
 
         self._deafen_btn = QPushButton()
-        self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
+        self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
         self._deafen_btn.setIconSize(QSize(18, 18))
         self._deafen_btn.setFixedSize(24, 24)
         self._deafen_btn.setToolTip("Deafen")
@@ -242,7 +219,7 @@ class UserPanel(QFrame):
         li_layout.addWidget(self._deafen_btn)
 
         self._settings_btn = QPushButton()
-        self._settings_btn.setIcon(_tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim, size=18))
+        self._settings_btn.setIcon(tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim, size=18))
         self._settings_btn.setIconSize(QSize(18, 18))
         self._settings_btn.setFixedSize(24, 24)
         self._settings_btn.setToolTip("Settings")
@@ -292,18 +269,18 @@ class UserPanel(QFrame):
         )
         # Re-tint icons and apply correct style based on toggle state
         if self._muted:
-            self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone-off.svg", c.status_danger, size=18))
+            self._mute_btn.setIcon(tinted_icon(_ICONS_DIR / "microphone-off.svg", c.status_danger, size=18))
             self._mute_btn.setStyleSheet(self._btn_style_danger)
         else:
-            self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
+            self._mute_btn.setIcon(tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
             self._mute_btn.setStyleSheet(self._btn_style)
         if self._deafened:
-            self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones-off.svg", c.status_danger, size=18))
+            self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones-off.svg", c.status_danger, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style_danger)
         else:
-            self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
+            self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style)
-        self._settings_btn.setIcon(_tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim, size=18))
+        self._settings_btn.setIcon(tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim, size=18))
         self._settings_btn.setStyleSheet(self._btn_style)
 
     def update_user(self) -> None:
@@ -347,11 +324,11 @@ class UserPanel(QFrame):
         state.voice_set_mute(self._muted)
         c = state.theme.colors
         if self._muted:
-            self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone-off.svg", c.status_danger, size=18))
+            self._mute_btn.setIcon(tinted_icon(_ICONS_DIR / "microphone-off.svg", c.status_danger, size=18))
             self._mute_btn.setStyleSheet(self._btn_style_danger)
             self._mute_btn.setToolTip("Unmute")
         else:
-            self._mute_btn.setIcon(_tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
+            self._mute_btn.setIcon(tinted_icon(_ICONS_DIR / "microphone.svg", c.text_dim, size=18))
             self._mute_btn.setStyleSheet(self._btn_style)
             self._mute_btn.setToolTip("Mute")
 
@@ -361,10 +338,10 @@ class UserPanel(QFrame):
         state.voice_set_deaf(self._deafened)
         c = state.theme.colors
         if self._deafened:
-            self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones-off.svg", c.status_danger, size=18))
+            self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones-off.svg", c.status_danger, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style_danger)
             self._deafen_btn.setToolTip("Undeafen")
         else:
-            self._deafen_btn.setIcon(_tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
+            self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style)
             self._deafen_btn.setToolTip("Deafen")

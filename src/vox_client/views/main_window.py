@@ -14,6 +14,7 @@ from vox_sdk import Client
 from vox_sdk.models.users import PresenceResponse
 
 from vox_client.state import AppState
+from vox_client.widgets.ui_helpers import await_dialog
 
 
 def _save_session(url: str, token: str, user_id: int) -> None:
@@ -273,13 +274,7 @@ class MainWindow(QMainWindow):
         from vox_client.views.login import LoginDialog
 
         dlg = LoginDialog(self)
-        dlg.setModal(True)
-        dlg.show()
-
-        # Wait for the dialog to close (async-friendly)
-        future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
-        dlg.finished.connect(lambda _result: future.set_result(None))
-        await future
+        await await_dialog(dlg)
 
         if dlg.client is None:
             return
@@ -476,12 +471,7 @@ class MainWindow(QMainWindow):
 
         dlg = UserSettingsDialog(self)
         dlg.logout_requested.connect(self._on_logout)
-        dlg.setModal(True)
-        dlg.show()
-
-        future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
-        dlg.finished.connect(lambda _result: future.set_result(None))
-        await future
+        await await_dialog(dlg)
 
     @asyncSlot()
     async def _on_logout(self) -> None:
@@ -511,12 +501,7 @@ class MainWindow(QMainWindow):
         from vox_client.widgets.server_settings import ServerSettingsDialog
 
         dlg = ServerSettingsDialog(self)
-        dlg.setModal(True)
-        dlg.show()
-
-        future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
-        dlg.finished.connect(lambda _result: future.set_result(None))
-        await future
+        await await_dialog(dlg)
 
         # Refresh sidebar header in case server name changed
         self._channel_sidebar.populate()

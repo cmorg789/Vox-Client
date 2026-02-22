@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from PyQt6.QtCore import QRectF, QSize, Qt
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -23,31 +19,8 @@ from vox_sdk.models.auth import MFARequiredResponse
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
-
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    svg_text = svg_path.read_text()
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
-
-
-def _field_label(text: str) -> QLabel:
-    c = AppState.instance().theme.colors
-    label = QLabel(text.upper())
-    label.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;"
-    )
-    return label
+from vox_client.widgets.icons import tinted_icon
+from vox_client.widgets.ui_helpers import action_button, close_button, field_label
 
 
 class LoginDialog(QDialog):
@@ -91,41 +64,31 @@ class LoginDialog(QDialog):
         )
         header_row.addWidget(self._title_label, stretch=1)
 
-        close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        close_btn.setIconSize(QSize(18, 18))
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; border-radius: 3px; padding: 0px; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        header_row.addWidget(close_btn)
+        header_row.addWidget(close_button(self.reject))
 
         outer.addLayout(header_row)
 
         # -- Server URL
-        outer.addWidget(_field_label("server"))
+        outer.addWidget(field_label("server"))
         self._url_input = QLineEdit()
         self._url_input.setPlaceholderText("https://vox.example.com")
         outer.addWidget(self._url_input)
 
         # -- Username
-        outer.addWidget(_field_label("username"))
+        outer.addWidget(field_label("username"))
         self._user_input = QLineEdit()
         self._user_input.setPlaceholderText("username")
         outer.addWidget(self._user_input)
 
         # -- Password
-        outer.addWidget(_field_label("password"))
+        outer.addWidget(field_label("password"))
         self._pass_input = QLineEdit()
         self._pass_input.setPlaceholderText("********")
         self._pass_input.setEchoMode(QLineEdit.EchoMode.Password)
         outer.addWidget(self._pass_input)
 
         # -- Display name (register only, hidden by default)
-        self._display_name_label = _field_label("display name")
+        self._display_name_label = field_label("display name")
         self._display_name_input = QLineEdit()
         self._display_name_input.setPlaceholderText("optional")
         self._display_name_label.hide()
@@ -134,7 +97,7 @@ class LoginDialog(QDialog):
         outer.addWidget(self._display_name_input)
 
         # -- MFA (hidden until needed)
-        self._mfa_label = _field_label("mfa code")
+        self._mfa_label = field_label("mfa code")
         self._mfa_input = QLineEdit()
         self._mfa_input.setPlaceholderText("000000")
         self._mfa_label.hide()
@@ -158,15 +121,8 @@ class LoginDialog(QDialog):
         self._cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(self._cancel_btn)
 
-        self._action_btn = QPushButton("[ LOGIN ]")
+        self._action_btn = action_button("[ LOGIN ]")
         self._action_btn.setDefault(True)
-        self._action_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-            f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-            f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
-            f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
-        )
         self._action_btn.clicked.connect(self._on_action_clicked)
         btn_row.addWidget(self._action_btn)
 

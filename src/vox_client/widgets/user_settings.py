@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
-from pathlib import Path
 
 from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PyQt6.QtGui import QColor, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QComboBox,
-    QDialog,
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -21,7 +16,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSlider,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,107 +25,22 @@ from qasync import asyncSlot
 from vox_sdk.models.enums import DMPermission
 from vox_sdk.permissions import CHANGE_NICKNAME
 
-from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.theme import save_flavor
+from vox_client.widgets.base_settings_dialog import BaseSettingsDialog
+from vox_client.widgets.icons import tinted_icon
+from vox_client.widgets.ui_helpers import (
+    action_button,
+    clear_layout,
+    danger_button,
+    field_label,
+    section_label,
+    separator,
+    set_status,
+    status_label,
+)
 
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    from PyQt6.QtCore import QRectF
-    from PyQt6.QtGui import QPainter
-
-    svg_text = svg_path.read_text()
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
-
-
-# -- Helpers -----------------------------------------------------------------
-
-def _section_label(text: str) -> QLabel:
-    c = AppState.instance().theme.colors
-    lbl = QLabel(text)
-    lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 10px; font-weight: 600; "
-        f"letter-spacing: 1px; padding: 4px 0 6px 0; border: none;"
-    )
-    return lbl
-
-
-def _field_label(text: str) -> QLabel:
-    c = AppState.instance().theme.colors
-    lbl = QLabel(text.upper())
-    lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 11px; font-weight: 600; "
-        f"letter-spacing: 0.5px; padding: 2px 0 0px 0; border: none;"
-    )
-    return lbl
-
-
-def _action_button(text: str, width: int = 110) -> QPushButton:
-    c = AppState.instance().theme.colors
-    btn = QPushButton(text)
-    btn.setFixedHeight(30)
-    btn.setFixedWidth(width)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet(
-        f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-        f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-        f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
-        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
-    )
-    return btn
-
-
-def _status_label() -> QLabel:
-    lbl = QLabel("")
-    lbl.setFixedHeight(18)
-    lbl.setStyleSheet("border: none; padding: 0;")
-    return lbl
-
-
-def _set_status(label: QLabel, text: str, kind: str = "info") -> None:
-    c = AppState.instance().theme.colors
-    color_map = {"info": c.text_dim, "error": c.status_danger, "success": c.status_success}
-    color = color_map.get(kind, c.text_dim)
-    label.setText(text)
-    label.setStyleSheet(f"color: {color}; border: none; padding: 0; font-size: 11px;")
-
-
-def _danger_button(text: str, width: int = 110) -> QPushButton:
-    c = AppState.instance().theme.colors
-    btn = QPushButton(text)
-    btn.setFixedHeight(30)
-    btn.setFixedWidth(width)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet(
-        f"QPushButton {{ background-color: {c.status_danger_dim}; "
-        f"border: 1px solid {c.status_danger}; color: {c.status_danger}; "
-        f"border-radius: 4px; padding: 4px 12px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
-        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; "
-        f"background: transparent; }}"
-    )
-    return btn
-
-
-def _separator() -> QFrame:
-    c = AppState.instance().theme.colors
-    line = QFrame()
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setFixedHeight(1)
-    line.setStyleSheet(f"background-color: {c.border}; border: none;")
-    return line
+from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 
 
 # -- Account Page ------------------------------------------------------------
@@ -154,11 +63,11 @@ class _AccountPage(QWidget):
         row = 0
 
         # -- Profile section --
-        grid.addWidget(_section_label("PROFILE"), row, 0, 1, 2)
+        grid.addWidget(section_label("PROFILE"), row, 0, 1, 2)
         row += 1
 
         # Username (read-only, spans both columns)
-        grid.addWidget(_field_label("Username"), row, 0, 1, 2)
+        grid.addWidget(field_label("Username"), row, 0, 1, 2)
         row += 1
         self._username_lbl = QLabel("—")
         self._username_lbl.setStyleSheet(
@@ -169,8 +78,8 @@ class _AccountPage(QWidget):
 
         # Display Name | Nickname
         self._can_change_nick = state.user_has_permission(CHANGE_NICKNAME)
-        grid.addWidget(_field_label("Display Name"), row, 0)
-        grid.addWidget(_field_label("Nickname"), row, 1)
+        grid.addWidget(field_label("Display Name"), row, 0)
+        grid.addWidget(field_label("Nickname"), row, 1)
         row += 1
         self._display_name_input = QLineEdit()
         self._display_name_input.setPlaceholderText("Display name...")
@@ -190,8 +99,8 @@ class _AccountPage(QWidget):
         row += 1
 
         # Bio | Avatar URL
-        grid.addWidget(_field_label("Bio"), row, 0)
-        grid.addWidget(_field_label("Avatar URL"), row, 1)
+        grid.addWidget(field_label("Bio"), row, 0)
+        grid.addWidget(field_label("Avatar URL"), row, 1)
         row += 1
         self._bio_input = QLineEdit()
         self._bio_input.setPlaceholderText("Tell us about yourself...")
@@ -211,9 +120,9 @@ class _AccountPage(QWidget):
 
         save_col = QVBoxLayout()
         save_col.setSpacing(2)
-        self._status = _status_label()
+        self._status = status_label()
         save_col.addWidget(self._status)
-        self._save_btn = _action_button("[ SAVE ]")
+        self._save_btn = action_button("[ SAVE ]")
         self._save_btn.clicked.connect(self._on_save)
         save_col.addWidget(self._save_btn)
         grid.addLayout(save_col, row, 1, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
@@ -224,15 +133,15 @@ class _AccountPage(QWidget):
         row += 1
 
         # -- Separator --
-        grid.addWidget(_separator(), row, 0, 1, 2)
+        grid.addWidget(separator(), row, 0, 1, 2)
         row += 1
 
         # -- Session section --
-        grid.addWidget(_section_label("SESSION"), row, 0, 1, 2)
+        grid.addWidget(section_label("SESSION"), row, 0, 1, 2)
         row += 1
 
         # Server URL (left) | Logout (right)
-        grid.addWidget(_field_label("Server URL"), row, 0)
+        grid.addWidget(field_label("Server URL"), row, 0)
         row += 1
         url = ""
         if state.client is not None:
@@ -243,7 +152,7 @@ class _AccountPage(QWidget):
         )
         url_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         grid.addWidget(url_lbl, row, 0)
-        logout_btn = _danger_button("[ LOG OUT ]", width=120)
+        logout_btn = danger_button("[ LOG OUT ]", width=120)
         logout_btn.clicked.connect(self.logout_requested.emit)
         grid.addWidget(logout_btn, row, 1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
 
@@ -279,15 +188,12 @@ class _AccountPage(QWidget):
             self._avatar_input.setText(user.avatar or "")
 
         # Read-only info fields
-        while self._info_layout.count():
-            child = self._info_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        clear_layout(self._info_layout)
 
         if user.created_at:
             from datetime import datetime, timezone
             dt = datetime.fromtimestamp(user.created_at / 1000, tz=timezone.utc)
-            self._info_layout.addWidget(_field_label("Joined"))
+            self._info_layout.addWidget(field_label("Joined"))
             joined_lbl = QLabel(dt.strftime("%B %-d, %Y"))
             joined_lbl.setStyleSheet(
                 f"color: {c.text_secondary}; font-size: 12px; border: none; padding: 2px 0;"
@@ -295,7 +201,7 @@ class _AccountPage(QWidget):
             self._info_layout.addWidget(joined_lbl)
 
         if user.federated and user.home_domain:
-            self._info_layout.addWidget(_field_label("Home Domain"))
+            self._info_layout.addWidget(field_label("Home Domain"))
             domain_lbl = QLabel(user.home_domain)
             domain_lbl.setStyleSheet(
                 f"color: {c.text_secondary}; font-size: 12px; border: none; padding: 2px 0;"
@@ -308,10 +214,8 @@ class _AccountPage(QWidget):
         if state.client is None or state.user_id is None:
             return
         self._save_btn.setEnabled(False)
-        _set_status(self._status, "saving...", "info")
+        set_status(self._status, "saving...", "info")
         try:
-            # Update user profile (display_name, bio, avatar)
-            # Send empty string to clear; the SDK treats None as "don't change"
             display_name = self._display_name_input.text().strip()
             bio = self._bio_input.text().strip()
             avatar = self._avatar_input.text().strip()
@@ -322,7 +226,6 @@ class _AccountPage(QWidget):
                 avatar=avatar,
             )
 
-            # Update member nickname (empty string clears it)
             if self._nickname_input is not None:
                 nickname = self._nickname_input.text().strip()
                 result = await state.client.members.update(
@@ -330,9 +233,9 @@ class _AccountPage(QWidget):
                 )
                 state._members[state.user_id] = result
 
-            _set_status(self._status, "saved", "success")
+            set_status(self._status, "saved", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
 
@@ -357,7 +260,7 @@ class _AppearancePage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        layout.addWidget(_section_label("THEME"))
+        layout.addWidget(section_label("THEME"))
 
         self._group = QButtonGroup(self)
         self._radios: dict[str, QRadioButton] = {}
@@ -445,9 +348,8 @@ def _log_volume(percent: int) -> float:
     import math
     if percent <= 0:
         return 0.0
-    # Normalise to 0.0–1.0 range, apply exponential curve, scale to 0.0–2.0
-    t = percent / 200.0  # 0.0 .. 1.0
-    return 2.0 * (math.pow(10, t) - 1) / 9.0  # maps 0→0, 0.5→0.35, 1.0→1.0  then ×2
+    t = percent / 200.0
+    return 2.0 * (math.pow(10, t) - 1) / 9.0
 
 
 # -- Mic Sensitivity Slider with live level overlay --------------------------
@@ -455,16 +357,15 @@ def _log_volume(percent: int) -> float:
 class _MicSlider(QSlider):
     """Horizontal slider that paints a live mic level behind the groove."""
 
-    _SMOOTH_UP = 0.3    # attack – rise quickly
-    _SMOOTH_DOWN = 0.08  # release – fall slowly
+    _SMOOTH_UP = 0.3
+    _SMOOTH_DOWN = 0.08
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
-        self._level: float = 0.0  # 0.0–1.0 (smoothed)
+        self._level: float = 0.0
 
     def set_level(self, raw: float) -> None:
         raw = max(0.0, min(1.0, raw))
-        # Exponential smoothing: fast attack, slow release
         alpha = self._SMOOTH_UP if raw > self._level else self._SMOOTH_DOWN
         self._level += alpha * (raw - self._level)
         self.update()
@@ -475,13 +376,11 @@ class _MicSlider(QSlider):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Compute groove rect (centered strip)
         groove_h = 6
         margin_x = 8
         y = (self.height() - groove_h) // 2
         groove_rect = QRect(margin_x, y, self.width() - 2 * margin_x, groove_h)
 
-        # Compute handle position (needed for clipping the fill)
         handle_w = 14
         available = groove_rect.width() - handle_w
         val_range = self.maximum() - self.minimum()
@@ -489,22 +388,18 @@ class _MicSlider(QSlider):
             handle_x = groove_rect.x() + int(available * (self.value() - self.minimum()) / val_range)
         else:
             handle_x = groove_rect.x()
-        # Center of the handle is the threshold line
         threshold_x = handle_x + handle_w // 2
 
-        # 1) Track background
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(c.bg_active))
         painter.drawRoundedRect(groove_rect, 3, 3)
 
-        # 2) Live level fill — red up to handle, green past it
         if self._level > 0:
             fill_w = int(groove_rect.width() * self._level)
             threshold = self.value() / 100.0 if self.maximum() > 0 else 0.5
             gate_x = threshold_x - groove_rect.x()
 
             if self._level >= threshold:
-                # Red portion: from left edge to handle center
                 if gate_x > 0:
                     red_color = QColor(c.status_danger)
                     red_color.setAlpha(120)
@@ -512,7 +407,6 @@ class _MicSlider(QSlider):
                     painter.drawRoundedRect(
                         QRect(groove_rect.x(), groove_rect.y(), gate_x, groove_h), 3, 3,
                     )
-                # Green portion: from handle center to level end
                 green_w = fill_w - gate_x
                 if green_w > 0:
                     green_color = QColor(c.status_success)
@@ -522,7 +416,6 @@ class _MicSlider(QSlider):
                         QRect(groove_rect.x() + gate_x, groove_rect.y(), green_w, groove_h), 3, 3,
                     )
             else:
-                # Below threshold — red only, clamped to handle
                 clamped = min(fill_w, gate_x)
                 if clamped > 0:
                     red_color = QColor(c.status_danger)
@@ -532,7 +425,6 @@ class _MicSlider(QSlider):
                         QRect(groove_rect.x(), groove_rect.y(), clamped, groove_h), 3, 3,
                     )
 
-        # 3) Handle (small circle at the thumb position)
         handle_y = (self.height() - handle_w) // 2
         painter.setBrush(QColor(c.accent_bright))
         painter.drawEllipse(handle_x, handle_y, handle_w, handle_w)
@@ -574,7 +466,6 @@ class _AudioVideoPage(QWidget):
 
         row = 0
 
-        # ── CAMERA PREVIEW (spans both columns) ───────────────
         self._camera_preview = QLabel("No camera")
         self._camera_preview.setFixedHeight(160)
         self._camera_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -589,8 +480,7 @@ class _AudioVideoPage(QWidget):
         self._capture_session = None
         self._video_sink = None
 
-        # Camera selector
-        grid.addWidget(_section_label("CAMERA"), row, 0, 1, 2)
+        grid.addWidget(section_label("CAMERA"), row, 0, 1, 2)
         row += 1
         self._camera_combo = QComboBox()
         self._camera_combo.setFixedHeight(30)
@@ -612,13 +502,11 @@ class _AudioVideoPage(QWidget):
         grid.addWidget(self._camera_combo, row, 0, 1, 2)
         row += 1
 
-        # ── AUDIO (two-column grid) ───────────────────────────
-        grid.addWidget(_separator(), row, 0, 1, 2)
+        grid.addWidget(separator(), row, 0, 1, 2)
         row += 1
 
-        # Input device (left) | Output device (right)
-        grid.addWidget(_section_label("INPUT DEVICE"), row, 0)
-        grid.addWidget(_section_label("OUTPUT DEVICE"), row, 1)
+        grid.addWidget(section_label("INPUT DEVICE"), row, 0)
+        grid.addWidget(section_label("OUTPUT DEVICE"), row, 1)
         row += 1
 
         self._input_combo = QComboBox()
@@ -658,15 +546,13 @@ class _AudioVideoPage(QWidget):
         grid.addWidget(self._output_combo, row, 1)
         row += 1
 
-        # ── INPUT VOLUME (left) | OUTPUT VOLUME (right) ───────
-        grid.addWidget(_section_label("INPUT VOLUME"), row, 0)
-        grid.addWidget(_section_label("OUTPUT VOLUME"), row, 1)
+        grid.addWidget(section_label("INPUT VOLUME"), row, 0)
+        grid.addWidget(section_label("OUTPUT VOLUME"), row, 1)
         row += 1
 
         saved_input_vol = settings.value("av/input_volume", 100, type=int)
         saved_output_vol = settings.value("av/output_volume", 100, type=int)
 
-        # Input volume slider + label
         input_vol_row = QWidget()
         input_vol_row.setStyleSheet("background: transparent; border: none;")
         iv_layout = QHBoxLayout(input_vol_row)
@@ -685,7 +571,6 @@ class _AudioVideoPage(QWidget):
         iv_layout.addWidget(self._input_vol_label)
         grid.addWidget(input_vol_row, row, 0)
 
-        # Output volume slider + label
         output_vol_row = QWidget()
         output_vol_row.setStyleSheet("background: transparent; border: none;")
         ov_layout = QHBoxLayout(output_vol_row)
@@ -708,8 +593,7 @@ class _AudioVideoPage(QWidget):
         self._output_vol_slider.valueChanged.connect(self._on_output_vol_changed)
         row += 1
 
-        # ── NOISE GATE (left) | TEST SPEAKERS (right) ─────────
-        grid.addWidget(_section_label("NOISE GATE"), row, 0)
+        grid.addWidget(section_label("NOISE GATE"), row, 0)
         row += 1
 
         self._mic_slider = _MicSlider()
@@ -730,20 +614,17 @@ class _AudioVideoPage(QWidget):
 
         self._audio_source = None
 
-        # ── SAVE ──────────────────────────────────────────────
-        grid.addWidget(_separator(), row, 0, 1, 2)
+        grid.addWidget(separator(), row, 0, 1, 2)
         row += 1
 
-        self._status = _status_label()
+        self._status = status_label()
         grid.addWidget(self._status, row, 0)
-        save_btn = _action_button("[ SAVE ]")
+        save_btn = action_button("[ SAVE ]")
         save_btn.clicked.connect(self._on_save)
         grid.addWidget(save_btn, row, 1, Qt.AlignmentFlag.AlignRight)
         row += 1
 
         grid.setRowStretch(row, 1)
-
-    # -- Volume controls -------------------------------------------------------
 
     def _on_input_vol_changed(self, value: int) -> None:
         self._input_vol_label.setText(f"{value}%")
@@ -753,21 +634,10 @@ class _AudioVideoPage(QWidget):
     def _on_output_vol_changed(self, value: int) -> None:
         self._output_vol_label.setText(f"{value}%")
 
-    # -- Permission helper -----------------------------------------------------
-
     @staticmethod
     def _request_av_permission(
         media_type: str, callback: callable, denied_callback: callable,
     ) -> None:
-        """Request camera/mic access.
-
-        In a production .app bundle, Qt's QCameraPermission / QMicrophonePermission
-        works.  During development (unbundled python), we fall back to AVFoundation
-        via pyobjc which can trigger the real macOS permission prompt.
-
-        Developers: run ``scripts/grant_av_permissions.py`` once to pre-grant access.
-        """
-        # Try Qt permission API first (works in .app bundles)
         try:
             from PyQt6.QtWidgets import QApplication
             if media_type == "vide":
@@ -785,19 +655,16 @@ class _AudioVideoPage(QWidget):
         except Exception:
             pass
 
-        # Fallback: AVFoundation (works unbundled on macOS)
         if sys.platform == "darwin":
             try:
                 import AVFoundation as AVF
                 av_status = AVF.AVCaptureDevice.authorizationStatusForMediaType_(media_type)
-                if av_status == 3:  # Authorized
+                if av_status == 3:
                     callback()
-                elif av_status == 0:  # NotDetermined
+                elif av_status == 0:
                     def _handler(granted: bool) -> None:
                         from PyQt6.QtCore import QTimer
                         target = callback if granted else denied_callback
-                        # Schedule on the main thread; the completion handler
-                        # runs on an arbitrary AVFoundation background thread.
                         QTimer.singleShot(0, target)
                     AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
                         media_type, _handler,
@@ -808,13 +675,9 @@ class _AudioVideoPage(QWidget):
             except ImportError:
                 pass
 
-        # Last resort — just try it
         callback()
 
-    # -- Camera ----------------------------------------------------------------
-
     def _on_camera_changed(self) -> None:
-        """Restart the camera when the user picks a different device."""
         if self._camera is not None:
             self._stop_camera()
             self._request_av_permission(
@@ -887,17 +750,15 @@ class _AudioVideoPage(QWidget):
         self._camera_preview.clear()
         self._camera_preview.setText("No camera")
 
-    # -- Live microphone level -------------------------------------------------
-
     def _on_mic_denied(self) -> None:
         if sys.platform == "darwin":
-            _set_status(
+            set_status(
                 self._status,
                 "Mic access denied — grant access in System Settings → Privacy & Security → Microphone",
                 "error",
             )
         else:
-            _set_status(self._status, "Microphone access denied", "error")
+            set_status(self._status, "Microphone access denied", "error")
 
     def _start_mic_capture(self) -> None:
         try:
@@ -939,7 +800,6 @@ class _AudioVideoPage(QWidget):
             samples = struct.unpack(f"<{n}h", raw[:n * 2])
             peak = (max(abs(s) for s in samples) if samples else 0) / 32768.0
 
-        # Convert to dB, map -60..0 dB range to 0.0..1.0
         if peak > 1e-6:
             db = 20 * math.log10(peak)
             level = max(0.0, min(1.0, (db + 60) / 60))
@@ -952,8 +812,6 @@ class _AudioVideoPage(QWidget):
             self._audio_source.stop()
             self._audio_source = None
         self._mic_slider.set_level(0.0)
-
-    # -- Test speakers ---------------------------------------------------------
 
     def _on_test_speakers(self) -> None:
         try:
@@ -974,7 +832,6 @@ class _AudioVideoPage(QWidget):
                         dev = d
                         break
 
-            # Stereo 440Hz tone: left channel 0.4s, then right channel 0.4s
             rate = 44100
             dur = 0.4
             n = int(rate * dur)
@@ -983,15 +840,15 @@ class _AudioVideoPage(QWidget):
             left_samples = bytearray()
             for i in range(n):
                 s = int(amplitude * math.sin(2 * math.pi * 440 * i / rate))
-                left_samples += struct.pack("<hh", s, 0)  # L=signal, R=silence
+                left_samples += struct.pack("<hh", s, 0)
 
             right_samples = bytearray()
             for i in range(n):
                 s = int(amplitude * math.sin(2 * math.pi * 440 * i / rate))
-                right_samples += struct.pack("<hh", 0, s)  # L=silence, R=signal
+                right_samples += struct.pack("<hh", 0, s)
 
-            gap = 0.15  # short silence between left and right
-            gap_samples = b"\x00" * (int(rate * gap) * 4)  # 4 bytes per stereo frame
+            gap = 0.15
+            gap_samples = b"\x00" * (int(rate * gap) * 4)
             raw = bytes(left_samples) + gap_samples + bytes(right_samples)
             total_duration = dur * 2 + gap
 
@@ -1004,24 +861,22 @@ class _AudioVideoPage(QWidget):
             sink.start(buf)
 
             self._speaker_test_btn.setEnabled(False)
-            _set_status(self._status, "left...", "info")
+            set_status(self._status, "left...", "info")
 
             def _show_right() -> None:
-                _set_status(self._status, "right...", "info")
+                set_status(self._status, "right...", "info")
 
             def _cleanup() -> None:
                 sink.stop()
                 buf.close()
-                _set_status(self._status, "", "info")
+                set_status(self._status, "", "info")
                 self._speaker_test_btn.setEnabled(True)
 
             QTimer.singleShot(int((dur + gap) * 1000), _show_right)
             QTimer.singleShot(int(total_duration * 1000) + 200, _cleanup)
         except Exception as exc:
-            _set_status(self._status, f"speaker test failed: {exc}", "error")
+            set_status(self._status, f"speaker test failed: {exc}", "error")
             self._speaker_test_btn.setEnabled(True)
-
-    # -- Save ------------------------------------------------------------------
 
     def _on_save(self) -> None:
         from PyQt6.QtCore import QSettings
@@ -1032,10 +887,9 @@ class _AudioVideoPage(QWidget):
         settings.setValue("av/noise_gate", self._mic_slider.value())
         settings.setValue("av/input_volume", self._input_vol_slider.value())
         settings.setValue("av/output_volume", self._output_vol_slider.value())
-        _set_status(self._status, "saved", "success")
+        set_status(self._status, "saved", "success")
 
     def showEvent(self, event) -> None:  # noqa: ANN001
-        """Start camera and mic capture when the page becomes visible."""
         super().showEvent(event)
         if self._camera is None:
             self._request_av_permission(
@@ -1047,7 +901,6 @@ class _AudioVideoPage(QWidget):
             )
 
     def hideEvent(self, event) -> None:  # noqa: ANN001
-        """Stop camera and mic capture when the page is hidden or dialog closes."""
         self._stop_camera()
         self._stop_mic_capture()
         super().hideEvent(event)
@@ -1064,8 +917,7 @@ class _PrivacyPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # -- DM permission --
-        layout.addWidget(_section_label("DIRECT MESSAGES"))
+        layout.addWidget(section_label("DIRECT MESSAGES"))
 
         self._dm_group = QButtonGroup(self)
         self._dm_radios: dict[DMPermission, QRadioButton] = {}
@@ -1094,11 +946,10 @@ class _PrivacyPage(QWidget):
         self._dm_group.buttonClicked.connect(self._on_dm_changed)
 
         layout.addSpacing(8)
-        layout.addWidget(_separator())
+        layout.addWidget(separator())
         layout.addSpacing(4)
 
-        # -- Blocked users --
-        layout.addWidget(_section_label("BLOCKED USERS"))
+        layout.addWidget(section_label("BLOCKED USERS"))
         self._block_container = QWidget()
         self._block_container.setStyleSheet("background: transparent; border: none;")
         self._block_layout = QVBoxLayout(self._block_container)
@@ -1111,14 +962,12 @@ class _PrivacyPage(QWidget):
         self._block_layout.addWidget(self._empty_label)
         layout.addWidget(self._block_container)
 
-        # -- Status --
         layout.addSpacing(4)
-        self._status = _status_label()
+        self._status = status_label()
         layout.addWidget(self._status)
 
         layout.addStretch()
 
-        # Load data
         self._load_data()
 
     @asyncSlot()
@@ -1142,11 +991,7 @@ class _PrivacyPage(QWidget):
 
     def _populate_blocks(self, blocked_ids: list[int]) -> None:
         c = AppState.instance().theme.colors
-        # Clear existing
-        while self._block_layout.count():
-            child = self._block_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        clear_layout(self._block_layout)
 
         if not blocked_ids:
             self._empty_label = QLabel("No blocked users")
@@ -1195,9 +1040,9 @@ class _PrivacyPage(QWidget):
             return
         try:
             await state.client.users.update_dm_settings(state.user_id, selected)
-            _set_status(self._status, "saved", "success")
+            set_status(self._status, "saved", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
 
     @asyncSlot()
     async def _on_unblock(self, target_id: int) -> None:
@@ -1208,9 +1053,9 @@ class _PrivacyPage(QWidget):
             await state.client.users.unblock(state.user_id, target_id)
             block_resp = await state.client.users.list_blocks(state.user_id)
             self._populate_blocks(block_resp.blocked_user_ids)
-            _set_status(self._status, "unblocked", "success")
+            set_status(self._status, "unblocked", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
 
 
 # -- About Page --------------------------------------------------------------
@@ -1224,8 +1069,7 @@ class _AboutPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # -- App info --
-        layout.addWidget(_section_label("APP INFO"))
+        layout.addWidget(section_label("APP INFO"))
 
         from PyQt6.QtCore import PYQT_VERSION_STR
         import vox_client
@@ -1236,7 +1080,7 @@ class _AboutPage(QWidget):
             ("Qt", PYQT_VERSION_STR),
         ]
         for label, value in info_items:
-            layout.addWidget(_field_label(label))
+            layout.addWidget(field_label(label))
             val_lbl = QLabel(value)
             val_lbl.setStyleSheet(
                 f"color: {c.text_secondary}; font-size: 12px; border: none; padding: 2px 0 4px 0;"
@@ -1245,13 +1089,11 @@ class _AboutPage(QWidget):
             layout.addWidget(val_lbl)
 
         layout.addSpacing(4)
-        layout.addWidget(_separator())
+        layout.addWidget(separator())
         layout.addSpacing(4)
 
-        # -- Third-party licenses --
-        layout.addWidget(_section_label("THIRD-PARTY LICENSES"))
+        layout.addWidget(section_label("THIRD-PARTY LICENSES"))
 
-        # Material Design Icons
         layout.addSpacing(4)
         mdi_name = QLabel("Material Design Icons")
         mdi_name.setStyleSheet(
@@ -1280,10 +1122,9 @@ class _AboutPage(QWidget):
         )
         layout.addWidget(mdi_note)
 
-        layout.addWidget(_separator())
+        layout.addWidget(separator())
         layout.addSpacing(4)
 
-        # JetBrains Mono
         jb_name = QLabel("JetBrains Mono")
         jb_name.setStyleSheet(
             f"color: {c.text_secondary}; font-size: 13px; font-weight: 600; border: none;"
@@ -1311,10 +1152,9 @@ class _AboutPage(QWidget):
         )
         layout.addWidget(jb_note)
 
-        layout.addWidget(_separator())
+        layout.addWidget(separator())
         layout.addSpacing(4)
 
-        # Catppuccin
         ctp_name = QLabel("Catppuccin")
         ctp_name.setStyleSheet(
             f"color: {c.text_secondary}; font-size: 13px; font-weight: 600; border: none;"
@@ -1356,131 +1196,18 @@ _NAV_ITEMS = [
 ]
 
 
-class UserSettingsDialog(QDialog):
+class UserSettingsDialog(BaseSettingsDialog):
     """Frameless user settings dialog with sidebar navigation."""
 
     logout_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        c = AppState.instance().theme.colors
-
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(720, 520)
-        self.setStyleSheet(
-            f"UserSettingsDialog {{ background-color: {c.bg_panel}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
-        )
-
-        self._drag_pos = None
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # -- Title bar ---------------------------------------------------------
-        self._title_bar = QWidget()
-        self._title_bar.setObjectName("UserSettingsTitleBar")
-        self._title_bar.setFixedHeight(40)
-        self._title_bar.setStyleSheet(
-            f"#UserSettingsTitleBar {{ background-color: {c.bg_panel}; "
-            f"border-bottom: 1px solid {c.border}; "
-            f"border-top-left-radius: 6px; border-top-right-radius: 6px; }}"
-        )
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(16, 0, 10, 0)
-        title_layout.setSpacing(8)
-
-        self._title_lbl = QLabel("USER SETTINGS")
-        self._title_lbl.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
-            f"letter-spacing: 1px; border: none;"
-        )
-        title_layout.addWidget(self._title_lbl)
-        title_layout.addStretch()
-
-        self._close_btn = QPushButton()
-        self._close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        self._close_btn.setIconSize(QSize(18, 18))
-        self._close_btn.setFixedSize(28, 28)
-        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        self._close_btn.clicked.connect(self.reject)
-        title_layout.addWidget(self._close_btn)
-
-        outer.addWidget(self._title_bar)
-
-        # -- Body: sidebar + content -------------------------------------------
-        body = QWidget()
-        body.setStyleSheet("border: none;")
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
-
-        # Sidebar nav
-        self._nav_panel = QWidget()
-        self._nav_panel.setFixedWidth(160)
-        self._nav_panel.setStyleSheet(
-            f"background-color: {c.bg_panel}; "
-            f"border-bottom-left-radius: 6px;"
-        )
-        nav_layout = QVBoxLayout(self._nav_panel)
-        nav_layout.setContentsMargins(8, 12, 8, 12)
-        nav_layout.setSpacing(2)
-
-        self._nav_buttons: list[QPushButton] = []
-        self._nav_icons: list[str] = []
-        for display_text, icon_file in _NAV_ITEMS:
-            btn = QPushButton(display_text)
-            btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_dim, size=14))
-            btn.setIconSize(QSize(14, 14))
-            btn.setFixedHeight(32)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                f"color: {c.text_dim}; border: none; border-radius: 4px; "
-                f"background: transparent; }}"
-                f"QPushButton:hover {{ color: {c.text_secondary}; "
-                f"background-color: {c.bg_hover}; }}"
-            )
-            idx = len(self._nav_buttons)
-            btn.clicked.connect(lambda checked, i=idx: self._on_nav_clicked(i))
-            nav_layout.addWidget(btn)
-            self._nav_buttons.append(btn)
-            self._nav_icons.append(icon_file)
-
-        nav_layout.addStretch()
-        body_layout.addWidget(self._nav_panel)
-
-        # Vertical separator
-        self._sep = QWidget()
-        self._sep.setFixedWidth(1)
-        self._sep.setStyleSheet(f"background-color: {c.border};")
-        body_layout.addWidget(self._sep)
-
-        # Content stack
-        self._stack = QStackedWidget()
-        self._stack.setStyleSheet("background: transparent; border: none;")
-
-        self._build_pages()
-
-        body_layout.addWidget(self._stack, stretch=1)
-
-        outer.addWidget(body, stretch=1)
-
-        # Select first nav item
-        self._active_nav = 0
-        self._on_nav_clicked(0)
+        super().__init__("USER SETTINGS", _NAV_ITEMS, parent)
 
         # Live-update when theme hue changes
         AppState.instance().theme_changed.connect(self._on_theme_changed)
 
     def _build_pages(self) -> None:
-        """Create (or recreate) the content pages."""
         # Remove existing pages
         while self._stack.count():
             w = self._stack.widget(0)
@@ -1495,84 +1222,14 @@ class UserSettingsDialog(QDialog):
         self._about_page = _AboutPage()
 
         for page in (self._account_page, self._av_page, self._privacy_page, self._appearance_page, self._about_page):
-            wrapper = QWidget()
-            wrapper.setStyleSheet("background: transparent; border: none;")
-            w_layout = QVBoxLayout(wrapper)
-            w_layout.setContentsMargins(20, 16, 20, 16)
-            w_layout.setSpacing(0)
-            w_layout.addWidget(page)
-            self._stack.addWidget(wrapper)
+            self._add_page(page)
 
     def _on_theme_changed(self) -> None:
-        """Restyle the dialog shell and rebuild pages with new colors."""
-        c = AppState.instance().theme.colors
-
-        # Dialog chrome
-        self.setStyleSheet(
-            f"UserSettingsDialog {{ background-color: {c.bg_panel}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
-        )
-        self._title_bar.setStyleSheet(
-            f"#UserSettingsTitleBar {{ background-color: {c.bg_panel}; "
-            f"border-bottom: 1px solid {c.border}; "
-            f"border-top-left-radius: 6px; border-top-right-radius: 6px; }}"
-        )
-        self._title_lbl.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
-            f"letter-spacing: 1px; border: none;"
-        )
-        self._close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        self._close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        self._nav_panel.setStyleSheet(
-            f"background-color: {c.bg_panel}; "
-            f"border-bottom-left-radius: 6px;"
-        )
-        self._sep.setStyleSheet(f"background-color: {c.border};")
-
-        # Rebuild pages (cheapest way to update all the labels/buttons inside)
+        self._restyle()
         current = self._active_nav
         self._build_pages()
         self._on_nav_clicked(current)
 
-    def _on_nav_clicked(self, index: int) -> None:
-        c = AppState.instance().theme.colors
-        self._active_nav = index
-        self._stack.setCurrentIndex(index)
-        for i, btn in enumerate(self._nav_buttons):
-            icon_file = self._nav_icons[i]
-            if i == index:
-                btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_primary, size=14))
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                    f"color: {c.text_primary}; border: none; border-radius: 4px; "
-                    f"background-color: {c.bg_active}; font-weight: 600; }}"
-                )
-            else:
-                btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_dim, size=14))
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                    f"color: {c.text_dim}; border: none; border-radius: 4px; "
-                    f"background: transparent; }}"
-                    f"QPushButton:hover {{ color: {c.text_secondary}; "
-                    f"background-color: {c.bg_hover}; }}"
-                )
-
     def _on_logout(self) -> None:
         self.logout_requested.emit()
         self.accept()
-
-    # -- Frameless drag support ------------------------------------------------
-
-    def mousePressEvent(self, event) -> None:  # noqa: ANN001
-        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 40:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
-    def mouseMoveEvent(self, event) -> None:  # noqa: ANN001
-        if self._drag_pos is not None:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-
-    def mouseReleaseEvent(self, event) -> None:  # noqa: ANN001
-        self._drag_pos = None

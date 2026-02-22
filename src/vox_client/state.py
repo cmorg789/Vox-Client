@@ -224,6 +224,16 @@ class AppState(QObject):
             except Exception:
                 pass
 
+    async def refresh_layout(self) -> None:
+        """Re-fetch the server layout and rebuild all layout caches."""
+        assert self.client is not None
+        layout = await self.client.server.layout()
+        self._layout = layout
+        self._feeds = {f.feed_id: f for f in layout.feeds}
+        self._rooms = {r.room_id: r for r in layout.rooms}
+        self._categories = {c.category_id: c for c in layout.categories}
+        self.layout_changed.emit()
+
     # -- data loading --------------------------------------------------------
 
     async def load_server_data(self) -> None:

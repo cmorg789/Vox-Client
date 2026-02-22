@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import QMimeData, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QDrag, QIcon, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -28,28 +25,16 @@ from vox_sdk.permissions import ADMINISTRATOR, MANAGE_SERVER, MANAGE_SPACES
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
+from vox_client.widgets.icons import tinted_icon
+from vox_client.widgets.ui_helpers import (
+    close_button,
+    dialog_input,
+    dialog_status_label,
+    small_accent_button,
+)
 
 _MIME_CATEGORY = "application/vnd.vox.category"
 _MIME_CHANNEL = "application/vnd.vox.channel"
-
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    from PyQt6.QtCore import QRectF
-    from PyQt6.QtGui import QPainter
-
-    svg_text = svg_path.read_text()
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2  # render at 2x for HiDPI
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
 
 
 # -- Drag-and-drop helpers ---------------------------------------------------
@@ -192,17 +177,7 @@ class _CreateSpaceDialog(QDialog):
         )
         title_row.addWidget(title)
         title_row.addStretch()
-        close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        close_btn.setIconSize(QSize(18, 18))
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        title_row.addWidget(close_btn)
+        title_row.addWidget(close_button(self.reject))
         layout.addLayout(title_row)
 
         # Type combo
@@ -221,20 +196,11 @@ class _CreateSpaceDialog(QDialog):
         layout.addWidget(self._type_combo)
 
         # Name input
-        self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("channel-name")
-        self._name_input.setFixedHeight(28)
-        self._name_input.setStyleSheet(
-            f"background-color: {c.bg_input}; color: {c.text_primary}; "
-            f"border: 1px solid {c.border}; border-radius: 4px; "
-            f"padding: 4px 8px; font-size: 12px;"
-        )
+        self._name_input = dialog_input("channel-name")
         layout.addWidget(self._name_input)
 
         # Status label
-        self._status = QLabel("")
-        self._status.setFixedHeight(16)
-        self._status.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        self._status = dialog_status_label()
         layout.addWidget(self._status)
 
         layout.addStretch()
@@ -242,16 +208,7 @@ class _CreateSpaceDialog(QDialog):
         # Button row
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._create_btn = QPushButton("CREATE")
-        self._create_btn.setFixedHeight(28)
-        self._create_btn.setFixedWidth(80)
-        self._create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._create_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-            f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-            f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
-        )
+        self._create_btn = small_accent_button("CREATE", 80)
         self._create_btn.clicked.connect(self._on_create)
         btn_row.addWidget(self._create_btn)
         layout.addLayout(btn_row)
@@ -327,46 +284,20 @@ class _RenameDialog(QDialog):
         )
         title_row.addWidget(title)
         title_row.addStretch()
-        close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        close_btn.setIconSize(QSize(18, 18))
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        title_row.addWidget(close_btn)
+        title_row.addWidget(close_button(self.reject))
         layout.addLayout(title_row)
 
-        self._name_input = QLineEdit(current_name)
-        self._name_input.setFixedHeight(28)
-        self._name_input.setStyleSheet(
-            f"background-color: {c.bg_input}; color: {c.text_primary}; "
-            f"border: 1px solid {c.border}; border-radius: 4px; "
-            f"padding: 4px 8px; font-size: 12px;"
-        )
+        self._name_input = dialog_input("")
+        self._name_input.setText(current_name)
         self._name_input.selectAll()
         layout.addWidget(self._name_input)
 
-        self._status = QLabel("")
-        self._status.setFixedHeight(16)
-        self._status.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        self._status = dialog_status_label()
         layout.addWidget(self._status)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._save_btn = QPushButton("SAVE")
-        self._save_btn.setFixedHeight(28)
-        self._save_btn.setFixedWidth(70)
-        self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._save_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-            f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-            f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
-        )
+        self._save_btn = small_accent_button("SAVE", 70)
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
         layout.addLayout(btn_row)
@@ -463,46 +394,18 @@ class _CreateCategoryDialog(QDialog):
         )
         title_row.addWidget(title)
         title_row.addStretch()
-        close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        close_btn.setIconSize(QSize(18, 18))
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        title_row.addWidget(close_btn)
+        title_row.addWidget(close_button(self.reject))
         layout.addLayout(title_row)
 
-        self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("Category name")
-        self._name_input.setFixedHeight(28)
-        self._name_input.setStyleSheet(
-            f"background-color: {c.bg_input}; color: {c.text_primary}; "
-            f"border: 1px solid {c.border}; border-radius: 4px; "
-            f"padding: 4px 8px; font-size: 12px;"
-        )
+        self._name_input = dialog_input("Category name")
         layout.addWidget(self._name_input)
 
-        self._status = QLabel("")
-        self._status.setFixedHeight(16)
-        self._status.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        self._status = dialog_status_label()
         layout.addWidget(self._status)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._create_btn = QPushButton("CREATE")
-        self._create_btn.setFixedHeight(28)
-        self._create_btn.setFixedWidth(80)
-        self._create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._create_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-            f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-            f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-            f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
-        )
+        self._create_btn = small_accent_button("CREATE", 80)
         self._create_btn.clicked.connect(self._on_create)
         btn_row.addWidget(self._create_btn)
         layout.addLayout(btn_row)
@@ -583,7 +486,7 @@ class _CategoryHeader(QWidget):
         # "+" button (only if user can manage)
         if can_manage:
             self._plus_btn = QPushButton()
-            self._plus_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
+            self._plus_btn.setIcon(tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
             self._plus_btn.setIconSize(QSize(14, 14))
             self._plus_btn.setFixedSize(18, 18)
             self._plus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -664,7 +567,7 @@ class _CategoryHeader(QWidget):
         rename_act = menu.addAction("Rename Category")
         menu.addSeparator()
         delete_act = menu.addAction("Delete Category")
-        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
+        delete_act.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
 
         action = menu.exec(event.globalPos())
         if action is None:
@@ -747,7 +650,7 @@ class _ChannelItem(QWidget):
 
     def _set_prefix_icon(self, color: str) -> None:
         self._prefix_icon.setPixmap(
-            _tinted_icon(_ICONS_DIR / self._icon_svg, color, size=16).pixmap(QSize(16, 16))
+            tinted_icon(_ICONS_DIR / self._icon_svg, color, size=16).pixmap(QSize(16, 16))
         )
 
     def paintEvent(self, event) -> None:  # noqa: ANN001
@@ -846,7 +749,7 @@ class _ChannelItem(QWidget):
         rename_act = menu.addAction("Rename")
         menu.addSeparator()
         delete_act = menu.addAction("Delete")
-        delete_act.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
+        delete_act.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
 
         action = menu.exec(event.globalPos())
         if action is None:
@@ -917,14 +820,14 @@ class _VoiceMemberEntry(QWidget):
         if vm and vm.deaf:
             deaf_icon = QLabel()
             deaf_icon.setPixmap(
-                _tinted_icon(_ICONS_DIR / "headphones-off.svg", c.text_dim, size=10).pixmap(QSize(10, 10))
+                tinted_icon(_ICONS_DIR / "headphones-off.svg", c.text_dim, size=10).pixmap(QSize(10, 10))
             )
             deaf_icon.setFixedSize(10, 10)
             layout.addWidget(deaf_icon)
         elif vm and vm.mute:
             mute_icon = QLabel()
             mute_icon.setPixmap(
-                _tinted_icon(_ICONS_DIR / "microphone-off.svg", c.text_dim, size=10).pixmap(QSize(10, 10))
+                tinted_icon(_ICONS_DIR / "microphone-off.svg", c.text_dim, size=10).pixmap(QSize(10, 10))
             )
             mute_icon.setFixedSize(10, 10)
             layout.addWidget(mute_icon)
@@ -972,7 +875,7 @@ class ChannelSidebar(QWidget):
 
         # "+" button for creating categories (permission-gated, populated in populate())
         self._add_category_btn = QPushButton()
-        self._add_category_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=16))
+        self._add_category_btn.setIcon(tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=16))
         self._add_category_btn.setIconSize(QSize(16, 16))
         self._add_category_btn.setFixedSize(24, 24)
         self._add_category_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -984,7 +887,7 @@ class ChannelSidebar(QWidget):
         header_row.addWidget(self._add_category_btn)
 
         self._settings_btn = QPushButton()
-        self._settings_btn.setIcon(_tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim))
+        self._settings_btn.setIcon(tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim))
         self._settings_btn.setIconSize(QSize(16, 16))
         self._settings_btn.setFixedSize(24, 24)
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1033,8 +936,8 @@ class ChannelSidebar(QWidget):
         self._header.setStyleSheet(
             f"color: {c.text_primary}; font-weight: 600; font-size: 13px;"
         )
-        self._add_category_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
-        self._settings_btn.setIcon(_tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim))
+        self._add_category_btn.setIcon(tinted_icon(_ICONS_DIR / "plus.svg", c.text_dim, size=14))
+        self._settings_btn.setIcon(tinted_icon(_ICONS_DIR / "cog.svg", c.text_dim))
         self._scroll.setStyleSheet(f"border: none; background-color: {c.bg_panel};")
         self._container.setStyleSheet(f"background-color: {c.bg_panel};")
 
@@ -1216,12 +1119,7 @@ class ChannelSidebar(QWidget):
             await state.client.channels.update_category(
                 category_id, position=new_pos,
             )
-            layout = await state.client.server.layout()
-            state._layout = layout
-            state._feeds = {f.feed_id: f for f in layout.feeds}
-            state._rooms = {r.room_id: r for r in layout.rooms}
-            state._categories = {c.category_id: c for c in layout.categories}
-            state.layout_changed.emit()
+            await state.refresh_layout()
         except Exception:
             pass
 
@@ -1272,11 +1170,6 @@ class ChannelSidebar(QWidget):
                     item_id, category_id=target_category_id, position=position,
                 )
             # Refetch the full layout so ALL items' positions are up-to-date
-            layout = await state.client.server.layout()
-            state._layout = layout
-            state._feeds = {f.feed_id: f for f in layout.feeds}
-            state._rooms = {r.room_id: r for r in layout.rooms}
-            state._categories = {c.category_id: c for c in layout.categories}
-            state.layout_changed.emit()
+            await state.refresh_layout()
         except Exception:
             pass

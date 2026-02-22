@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from vox_client.state import AppState
+from vox_client.widgets.ui_helpers import clear_layout
 
 
 _CODE_RE = re.compile(r"`([^`]+)`")
@@ -118,10 +119,7 @@ class MessageList(QScrollArea):
         self._last_date = None
         self._msg_widgets.clear()
         self._msg_rows.clear()
-        while self._layout.count():
-            child = self._layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        clear_layout(self._layout)
 
     def _make_date_divider(self, date_str: str) -> QWidget:
         """Create a date divider with horizontal lines flanking the label."""

@@ -2,34 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
-
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    from PyQt6.QtCore import QRectF
-    from PyQt6.QtGui import QPainter
-
-    svg_text = svg_path.read_text()
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2  # render at 2x for HiDPI
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
+from vox_client.widgets.icons import tinted_icon
 
 
 class _ServerButton(QWidget):
@@ -152,7 +130,7 @@ class ServerStrip(QWidget):
         add_row = QWidget()
         add_row.setFixedSize(52, 36)
         add_btn = QPushButton(add_row)
-        add_btn.setIcon(_tinted_icon(_ICONS_DIR / "plus.svg", c.accent, size=18))
+        add_btn.setIcon(tinted_icon(_ICONS_DIR / "plus.svg", c.accent, size=18))
         add_btn.setIconSize(QSize(18, 18))
         add_btn.setFixedSize(36, 36)
         add_btn.move(8, 0)

@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -40,104 +32,16 @@ from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.theme import role_color_for_int
 from vox_client.widgets.avatar import AvatarWidget
-
-
-def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:
-    """Load an SVG and return a QIcon with paths filled in *color*."""
-    from PyQt6.QtCore import QRectF
-    from PyQt6.QtGui import QPainter
-
-    svg_text = svg_path.read_text()
-    svg_text = svg_text.replace("<svg ", f'<svg fill="{color}" ', 1)
-    renderer = QSvgRenderer(svg_text.encode())
-    scale = 2  # render at 2x for HiDPI
-    px = size * scale
-    pixmap = QPixmap(px, px)
-    pixmap.setDevicePixelRatio(scale)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return QIcon(pixmap)
-
-
-# -- Helpers -----------------------------------------------------------------
-
-def _section_label(text: str) -> QLabel:
-    c = AppState.instance().theme.colors
-    lbl = QLabel(text)
-    lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 10px; font-weight: 600; "
-        f"letter-spacing: 1px; padding: 12px 0 6px 0; border: none;"
-    )
-    return lbl
-
-
-def _field_label(text: str) -> QLabel:
-    c = AppState.instance().theme.colors
-    lbl = QLabel(text.upper())
-    lbl.setStyleSheet(
-        f"color: {c.text_dim}; font-size: 11px; font-weight: 600; "
-        f"letter-spacing: 0.5px; padding: 2px 0 2px 0; border: none;"
-    )
-    return lbl
-
-
-def _status_label() -> QLabel:
-    lbl = QLabel("")
-    lbl.setFixedHeight(18)
-    lbl.setStyleSheet("border: none; padding: 0;")
-    return lbl
-
-
-def _set_status(label: QLabel, text: str, kind: str = "info") -> None:
-    c = AppState.instance().theme.colors
-    color_map = {"info": c.text_dim, "error": c.status_danger, "success": c.status_success}
-    color = color_map.get(kind, c.text_dim)
-    label.setText(text)
-    label.setStyleSheet(f"color: {color}; border: none; padding: 0; font-size: 11px;")
-
-
-def _action_button(text: str, width: int = 110) -> QPushButton:
-    c = AppState.instance().theme.colors
-    btn = QPushButton(text)
-    btn.setFixedHeight(30)
-    btn.setFixedWidth(width)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet(
-        f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-        f"color: {c.accent_bright}; border-radius: 4px; padding: 6px 16px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
-        f"QPushButton:pressed {{ background-color: {c.accent_dim}; }}"
-        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; background: transparent; }}"
-    )
-    return btn
-
-
-def _danger_button(text: str, width: int = 110) -> QPushButton:
-    c = AppState.instance().theme.colors
-    btn = QPushButton(text)
-    btn.setFixedHeight(30)
-    btn.setFixedWidth(width)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet(
-        f"QPushButton {{ background-color: {c.status_danger_dim}; "
-        f"border: 1px solid {c.status_danger}; color: {c.status_danger}; "
-        f"border-radius: 4px; padding: 4px 12px; font-weight: 500; }}"
-        f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
-        f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; "
-        f"background: transparent; }}"
-    )
-    return btn
-
-
-def _separator() -> QFrame:
-    c = AppState.instance().theme.colors
-    line = QFrame()
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setFixedHeight(1)
-    line.setStyleSheet(f"background-color: {c.border}; border: none;")
-    return line
+from vox_client.widgets.base_settings_dialog import BaseSettingsDialog
+from vox_client.widgets.icons import tinted_icon
+from vox_client.widgets.ui_helpers import (
+    action_button,
+    danger_button,
+    section_label,
+    separator,
+    set_status,
+    status_label,
+)
 
 
 def _make_scroll_area() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
@@ -161,36 +65,35 @@ class _OverviewPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         state = AppState.instance()
-        c = state.theme.colors
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        layout.addWidget(_section_label("SERVER NAME"))
+        layout.addWidget(section_label("SERVER NAME", top_pad=12))
         self._name_input = QLineEdit(state.server_name)
         layout.addWidget(self._name_input)
 
-        layout.addWidget(_section_label("DESCRIPTION"))
+        layout.addWidget(section_label("DESCRIPTION", top_pad=12))
         self._desc_input = QTextEdit()
         self._desc_input.setFixedHeight(100)
         self._desc_input.setPlaceholderText("A short description of your server...")
         layout.addWidget(self._desc_input)
 
-        layout.addWidget(_section_label("ICON URL"))
+        layout.addWidget(section_label("ICON URL", top_pad=12))
         self._icon_input = QLineEdit(state.server_icon or "")
         self._icon_input.setPlaceholderText("https://example.com/icon.png")
         layout.addWidget(self._icon_input)
 
         layout.addSpacing(12)
 
-        self._status = _status_label()
+        self._status = status_label()
         layout.addWidget(self._status)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch()
-        self._save_btn = _action_button("[ SAVE ]")
+        self._save_btn = action_button("[ SAVE ]")
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
         layout.addLayout(btn_row)
@@ -203,7 +106,7 @@ class _OverviewPage(QWidget):
         if state.client is None:
             return
         self._save_btn.setEnabled(False)
-        _set_status(self._status, "saving...", "info")
+        set_status(self._status, "saving...", "info")
         try:
             name = self._name_input.text().strip() or None
             desc = self._desc_input.toPlainText().strip() or None
@@ -213,9 +116,9 @@ class _OverviewPage(QWidget):
             )
             state.server_name = result.name
             state.server_icon = result.icon
-            _set_status(self._status, "saved", "success")
+            set_status(self._status, "saved", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
 
@@ -310,12 +213,12 @@ class _RoleEditPanel(QWidget):
         form_layout.setContentsMargins(0, 0, 0, 0)
         form_layout.setSpacing(4)
 
-        form_layout.addWidget(_section_label("ROLE NAME"))
+        form_layout.addWidget(section_label("ROLE NAME", top_pad=12))
         self._name_input = QLineEdit()
         form_layout.addWidget(self._name_input)
 
         # Color row: label + input + preview swatch
-        form_layout.addWidget(_section_label("COLOR"))
+        form_layout.addWidget(section_label("COLOR", top_pad=12))
         color_row = QHBoxLayout()
         color_row.setSpacing(8)
         self._color_input = QLineEdit()
@@ -332,7 +235,7 @@ class _RoleEditPanel(QWidget):
         color_row.addStretch()
         form_layout.addLayout(color_row)
 
-        form_layout.addWidget(_section_label("PERMISSIONS"))
+        form_layout.addWidget(section_label("PERMISSIONS", top_pad=12))
 
         # Permission grid (2 columns)
         self._perm_checks: dict[str, tuple[QCheckBox, int]] = {}
@@ -378,16 +281,16 @@ class _RoleEditPanel(QWidget):
         form_layout.addWidget(perm_grid)
 
         form_layout.addSpacing(8)
-        self._status = _status_label()
+        self._status = status_label()
         form_layout.addWidget(self._status)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch()
-        self._save_btn = _action_button("[ SAVE ]")
+        self._save_btn = action_button("[ SAVE ]")
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
-        self._delete_btn = _danger_button("[ DELETE ]")
+        self._delete_btn = danger_button("[ DELETE ]")
         self._delete_btn.clicked.connect(self._on_delete)
         btn_row.addWidget(self._delete_btn)
         form_layout.addLayout(btn_row)
@@ -411,7 +314,7 @@ class _RoleEditPanel(QWidget):
         perms = role.permissions or 0
         for _label, (cb, bit) in self._perm_checks.items():
             cb.setChecked(bool(perms & bit))
-        _set_status(self._status, "", "info")
+        set_status(self._status, "", "info")
 
     def clear(self) -> None:
         self._role_id = None
@@ -454,7 +357,7 @@ class _RoleEditPanel(QWidget):
         if state.client is None or self._role_id is None:
             return
         self._save_btn.setEnabled(False)
-        _set_status(self._status, "saving...", "info")
+        set_status(self._status, "saving...", "info")
         try:
             result = await state.client.roles.update(
                 self._role_id,
@@ -463,10 +366,10 @@ class _RoleEditPanel(QWidget):
                 permissions=self._collect_permissions(),
             )
             state._roles[result.role_id] = result
-            _set_status(self._status, "saved", "success")
+            set_status(self._status, "saved", "success")
             self.role_saved.emit()
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
 
@@ -476,15 +379,15 @@ class _RoleEditPanel(QWidget):
         if state.client is None or self._role_id is None:
             return
         self._delete_btn.setEnabled(False)
-        _set_status(self._status, "deleting...", "info")
+        set_status(self._status, "deleting...", "info")
         try:
             await state.client.roles.delete(self._role_id)
             state._roles.pop(self._role_id, None)
-            _set_status(self._status, "deleted", "success")
+            set_status(self._status, "deleted", "success")
             self._role_id = None
             self.role_deleted.emit()
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
         finally:
             self._delete_btn.setEnabled(True)
 
@@ -501,12 +404,12 @@ class _RolesPage(QWidget):
         # Top bar: section label + create button
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.addWidget(_section_label("ROLES"))
+        top_row.addWidget(section_label("ROLES", top_pad=12))
         top_row.addStretch()
-        self._create_status = _status_label()
+        self._create_status = status_label()
         self._create_status.setFixedWidth(80)
         top_row.addWidget(self._create_status)
-        self._create_btn = _action_button("[ + NEW ]", width=90)
+        self._create_btn = action_button("[ + NEW ]", width=90)
         self._create_btn.clicked.connect(self._on_create)
         top_row.addWidget(self._create_btn)
         layout.addLayout(top_row)
@@ -573,16 +476,16 @@ class _RolesPage(QWidget):
         if state.client is None:
             return
         self._create_btn.setEnabled(False)
-        _set_status(self._create_status, "creating...", "info")
+        set_status(self._create_status, "creating...", "info")
         try:
             result = await state.client.roles.create("New Role")
             state._roles[result.role_id] = result
-            _set_status(self._create_status, "", "info")
+            set_status(self._create_status, "", "info")
             self._active_role_id = result.role_id
             self._refresh_list()
             self._edit_panel.load_role(result.role_id)
         except Exception as exc:
-            _set_status(self._create_status, str(exc)[:30], "error")
+            set_status(self._create_status, str(exc)[:30], "error")
         finally:
             self._create_btn.setEnabled(True)
 
@@ -613,7 +516,7 @@ class _MemberRow(QWidget):
         row.addWidget(name_lbl, stretch=1)
 
         # Status label (inline feedback)
-        self._status = _status_label()
+        self._status = status_label()
         self._status.setFixedWidth(70)
         self._status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self._status)
@@ -660,9 +563,9 @@ class _MemberRow(QWidget):
         self._kick_btn.setEnabled(False)
         try:
             await state.client.members.remove(self.user_id)
-            _set_status(self._status, "kicked", "success")
+            set_status(self._status, "kicked", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc)[:20], "error")
+            set_status(self._status, str(exc)[:20], "error")
         finally:
             self._kick_btn.setEnabled(True)
 
@@ -674,9 +577,9 @@ class _MemberRow(QWidget):
         self._ban_btn.setEnabled(False)
         try:
             await state.client.members.ban(self.user_id)
-            _set_status(self._status, "banned", "success")
+            set_status(self._status, "banned", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc)[:20], "error")
+            set_status(self._status, str(exc)[:20], "error")
         finally:
             self._ban_btn.setEnabled(True)
 
@@ -696,7 +599,7 @@ class _BanRow(QWidget):
         icon_btn = QLabel()
         icon_btn.setFixedSize(18, 18)
         icon_btn.setPixmap(
-            _tinted_icon(_ICONS_DIR / "account-cancel.svg", c.status_danger, size=16).pixmap(16, 16)
+            tinted_icon(_ICONS_DIR / "account-cancel.svg", c.status_danger, size=16).pixmap(16, 16)
         )
         icon_btn.setStyleSheet("border: none;")
         row.addWidget(icon_btn)
@@ -712,7 +615,7 @@ class _BanRow(QWidget):
         else:
             row.addStretch()
 
-        self._status = _status_label()
+        self._status = status_label()
         self._status.setFixedWidth(70)
         self._status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self._status)
@@ -744,9 +647,9 @@ class _BanRow(QWidget):
         self._unban_btn.setEnabled(False)
         try:
             await state.client.members.unban(self.user_id)
-            _set_status(self._status, "unbanned", "success")
+            set_status(self._status, "unbanned", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc)[:20], "error")
+            set_status(self._status, str(exc)[:20], "error")
         finally:
             self._unban_btn.setEnabled(True)
 
@@ -754,7 +657,6 @@ class _BanRow(QWidget):
 class _MembersPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        c = AppState.instance().theme.colors
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -770,14 +672,14 @@ class _MembersPage(QWidget):
         layout.addSpacing(4)
 
         # Members section
-        layout.addWidget(_section_label("MEMBERS"))
+        layout.addWidget(section_label("MEMBERS", top_pad=12))
         self._member_scroll, self._member_container, self._member_layout = _make_scroll_area()
         layout.addWidget(self._member_scroll, stretch=1)
 
-        layout.addWidget(_separator())
+        layout.addWidget(separator())
 
         # Bans section
-        layout.addWidget(_section_label("BANS"))
+        layout.addWidget(section_label("BANS", top_pad=12))
         self._ban_scroll, self._ban_container, self._ban_layout = _make_scroll_area()
         self._ban_scroll.setFixedHeight(130)
         layout.addWidget(self._ban_scroll)
@@ -834,7 +736,7 @@ class _LimitsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        layout.addWidget(_section_label("SERVER LIMITS"))
+        layout.addWidget(section_label("SERVER LIMITS", top_pad=12))
 
         self._scroll, self._fields_container, self._fields_layout = _make_scroll_area()
         self._fields_layout.setSpacing(4)
@@ -843,13 +745,13 @@ class _LimitsPage(QWidget):
         self._fields: dict[str, QLineEdit] = {}
 
         layout.addSpacing(8)
-        self._status = _status_label()
+        self._status = status_label()
         layout.addWidget(self._status)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         btn_row.addStretch()
-        self._save_btn = _action_button("[ SAVE ]")
+        self._save_btn = action_button("[ SAVE ]")
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
         layout.addLayout(btn_row)
@@ -898,7 +800,7 @@ class _LimitsPage(QWidget):
                 self._fields_layout.addWidget(row_w)
                 self._fields[key] = inp
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
 
     @asyncSlot()
     async def _on_save(self) -> None:
@@ -906,7 +808,7 @@ class _LimitsPage(QWidget):
         if state.client is None:
             return
         self._save_btn.setEnabled(False)
-        _set_status(self._status, "saving...", "info")
+        set_status(self._status, "saving...", "info")
         try:
             kwargs = {}
             for key, inp in self._fields.items():
@@ -916,9 +818,9 @@ class _LimitsPage(QWidget):
                 except ValueError:
                     kwargs[key] = val
             await state.client.server.update_limits(**kwargs)
-            _set_status(self._status, "saved", "success")
+            set_status(self._status, "saved", "success")
         except Exception as exc:
-            _set_status(self._status, str(exc), "error")
+            set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
 
@@ -933,168 +835,17 @@ _NAV_ITEMS = [
 ]
 
 
-class ServerSettingsDialog(QDialog):
+class ServerSettingsDialog(BaseSettingsDialog):
     """Frameless server settings dialog with sidebar navigation."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        c = AppState.instance().theme.colors
+        super().__init__("SERVER SETTINGS", _NAV_ITEMS, parent)
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(720, 520)
-        self.setStyleSheet(
-            f"ServerSettingsDialog {{ background-color: {c.bg_panel}; "
-            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
-        )
-
-        # Allow dragging the frameless dialog
-        self._drag_pos = None
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # -- Title bar ---------------------------------------------------------
-        title_bar = QWidget()
-        title_bar.setObjectName("SettingsTitleBar")
-        title_bar.setFixedHeight(40)
-        title_bar.setStyleSheet(
-            f"#SettingsTitleBar {{ background-color: {c.bg_panel}; "
-            f"border-bottom: 1px solid {c.border}; "
-            f"border-top-left-radius: 6px; border-top-right-radius: 6px; }}"
-        )
-        title_layout = QHBoxLayout(title_bar)
-        title_layout.setContentsMargins(16, 0, 10, 0)
-        title_layout.setSpacing(8)
-
-        title_lbl = QLabel("SERVER SETTINGS")
-        title_lbl.setStyleSheet(
-            f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
-            f"letter-spacing: 1px; border: none;"
-        )
-        title_layout.addWidget(title_lbl)
-        title_layout.addStretch()
-
-        close_btn = QPushButton()
-        close_btn.setIcon(_tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
-        close_btn.setIconSize(QSize(18, 18))
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 3px; background: transparent; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        title_layout.addWidget(close_btn)
-
-        outer.addWidget(title_bar)
-
-        # -- Body: sidebar + content -------------------------------------------
-        body = QWidget()
-        body.setStyleSheet("border: none;")
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
-
-        # Sidebar nav
-        nav_panel = QWidget()
-        nav_panel.setFixedWidth(160)
-        nav_panel.setStyleSheet(
-            f"background-color: {c.bg_panel}; "
-            f"border-bottom-left-radius: 6px;"
-        )
-        nav_layout = QVBoxLayout(nav_panel)
-        nav_layout.setContentsMargins(8, 12, 8, 12)
-        nav_layout.setSpacing(2)
-
-        self._nav_buttons: list[QPushButton] = []
-        self._nav_icons: list[str] = []  # icon filenames for re-tinting
-        for display_text, icon_file in _NAV_ITEMS:
-            btn = QPushButton(display_text)
-            btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_dim, size=14))
-            btn.setIconSize(QSize(14, 14))
-            btn.setFixedHeight(32)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                f"color: {c.text_dim}; border: none; border-radius: 4px; "
-                f"background: transparent; }}"
-                f"QPushButton:hover {{ color: {c.text_secondary}; "
-                f"background-color: {c.bg_hover}; }}"
-            )
-            idx = len(self._nav_buttons)
-            btn.clicked.connect(lambda checked, i=idx: self._on_nav_clicked(i))
-            nav_layout.addWidget(btn)
-            self._nav_buttons.append(btn)
-            self._nav_icons.append(icon_file)
-
-        nav_layout.addStretch()
-        body_layout.addWidget(nav_panel)
-
-        # Vertical separator
-        sep = QWidget()
-        sep.setFixedWidth(1)
-        sep.setStyleSheet(f"background-color: {c.border};")
-        body_layout.addWidget(sep)
-
-        # Content stack
-        self._stack = QStackedWidget()
-        self._stack.setStyleSheet(f"background: transparent; border: none;")
-
-        # Wrap each page in padding
+    def _build_pages(self) -> None:
         self._overview_page = _OverviewPage()
         self._roles_page = _RolesPage()
         self._members_page = _MembersPage()
         self._limits_page = _LimitsPage()
 
         for page in (self._overview_page, self._roles_page, self._members_page, self._limits_page):
-            wrapper = QWidget()
-            wrapper.setStyleSheet("background: transparent; border: none;")
-            w_layout = QVBoxLayout(wrapper)
-            w_layout.setContentsMargins(20, 16, 20, 16)
-            w_layout.setSpacing(0)
-            w_layout.addWidget(page)
-            self._stack.addWidget(wrapper)
-
-        body_layout.addWidget(self._stack, stretch=1)
-
-        outer.addWidget(body, stretch=1)
-
-        # Select first nav item
-        self._on_nav_clicked(0)
-
-    def _on_nav_clicked(self, index: int) -> None:
-        c = AppState.instance().theme.colors
-        self._stack.setCurrentIndex(index)
-        for i, btn in enumerate(self._nav_buttons):
-            icon_file = self._nav_icons[i]
-            if i == index:
-                btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_primary, size=14))
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                    f"color: {c.text_primary}; border: none; border-radius: 4px; "
-                    f"background-color: {c.bg_active}; font-weight: 600; }}"
-                )
-            else:
-                btn.setIcon(_tinted_icon(_ICONS_DIR / icon_file, c.text_dim, size=14))
-                btn.setStyleSheet(
-                    f"QPushButton {{ text-align: left; padding: 0 12px; font-size: 12px; "
-                    f"color: {c.text_dim}; border: none; border-radius: 4px; "
-                    f"background: transparent; }}"
-                    f"QPushButton:hover {{ color: {c.text_secondary}; "
-                    f"background-color: {c.bg_hover}; }}"
-                )
-
-    # -- Frameless drag support ------------------------------------------------
-
-    def mousePressEvent(self, event) -> None:  # noqa: ANN001
-        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 40:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
-    def mouseMoveEvent(self, event) -> None:  # noqa: ANN001
-        if self._drag_pos is not None:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-
-    def mouseReleaseEvent(self, event) -> None:  # noqa: ANN001
-        self._drag_pos = None
+            self._add_page(page)
