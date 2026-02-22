@@ -25,10 +25,9 @@ from qasync import asyncSlot
 
 from vox_sdk.permissions import ADMINISTRATOR, MANAGE_SERVER, MANAGE_SPACES
 
+from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
-
-_ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
 
 _MIME_CATEGORY = "application/vnd.vox.category"
 _MIME_CHANNEL = "application/vnd.vox.channel"

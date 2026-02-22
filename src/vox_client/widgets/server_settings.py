@@ -36,11 +36,10 @@ from vox_sdk.permissions import (
     VIEW_SPACE,
 )
 
+from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.theme import role_color_for_int
 from vox_client.widgets.avatar import AvatarWidget
-
-_ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
 
 
 def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:

@@ -9,9 +9,8 @@ from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
 
+from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
-
-_ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
 
 
 def _tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:

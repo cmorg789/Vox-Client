@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
+from vox_client._frozen import FONTS_DIR as _FONTS_DIR
 from vox_client.state import AppState
 from vox_client.theme import Theme, load_saved_flavor
 from vox_client.views.main_window import MainWindow
-
-_FONTS_DIR = Path(__file__).parent / "resources" / "fonts"
 
 
 def _load_bundled_fonts() -> None:
