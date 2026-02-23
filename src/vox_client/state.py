@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from vox_sdk import Client, GatewayClient
 from vox_sdk.models.members import MemberResponse
@@ -51,6 +51,7 @@ class AppState(QObject):
     # Voice signals
     voice_state_changed = pyqtSignal()       # join/leave/members updated
     voice_connection_error = pyqtSignal(str)  # join failure message
+    voice_media_event = pyqtSignal(str, str)  # (event_type, detail) from media client
 
     # UI signals
     layout_loaded = pyqtSignal()
@@ -87,9 +88,12 @@ class AppState(QObject):
         self.voice_room_id: int | None = None
         self._voice_room_members: dict[int, dict[int, VoiceMemberData]] = {}  # room_id → {user_id → data}
         self._media_client: object | None = None  # VoxMediaClient, lazy-imported
+        self._media_url: str | None = None       # SFU URL for token refresh reconnect
+        self._media_cert_der: bytes | None = None
         self.voice_self_mute: bool = False
         self.voice_self_deaf: bool = False
         self._user_volumes: dict[int, float] = {}  # user_id → log volume (session-local)
+        self._media_poll_timer: QTimer | None = None
 
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
@@ -202,6 +206,9 @@ class AppState(QObject):
                     cert_der=cert_der,
                 )
                 self._media_client = mc
+                self._media_url = resp.media_url
+                self._media_cert_der = cert_der
+                self._start_media_poll()
             except ImportError:
                 log.warning("vox_media not available – audio disabled")
             self.voice_state_changed.emit()
@@ -215,6 +222,7 @@ class AppState(QObject):
             return
         room_id = self.voice_room_id
         # Disconnect and stop media client
+        self._stop_media_poll()
         if self._media_client is not None:
             try:
                 self._media_client.disconnect()
@@ -222,6 +230,8 @@ class AppState(QObject):
             except Exception:
                 log.warning("Error disconnecting media client for room %d", room_id, exc_info=True)
             self._media_client = None
+        self._media_url = None
+        self._media_cert_der = None
         # Tell server we're leaving
         if self.client is not None:
             try:
@@ -230,6 +240,43 @@ class AppState(QObject):
                 log.warning("Error sending voice leave for room %d", room_id, exc_info=True)
         self.voice_room_id = None
         self.voice_state_changed.emit()
+
+    def _start_media_poll(self) -> None:
+        """Start a 100ms timer that drains events from the media client."""
+        self._stop_media_poll()
+        timer = QTimer(self)
+        timer.setInterval(100)
+        timer.timeout.connect(self._poll_media_events)
+        timer.start()
+        self._media_poll_timer = timer
+
+    def _stop_media_poll(self) -> None:
+        if self._media_poll_timer is not None:
+            self._media_poll_timer.stop()
+            self._media_poll_timer = None
+
+    def _poll_media_events(self) -> None:
+        mc = self._media_client
+        if mc is None:
+            self._stop_media_poll()
+            return
+        # Drain all pending events
+        while True:
+            ev = mc.poll_event()
+            if ev is None:
+                break
+            event_type, detail = ev
+            log.debug("Media event: %s %s", event_type, detail)
+            self.voice_media_event.emit(event_type, detail)
+            if event_type == "connect_failed":
+                log.error("Media connection failed: %s", detail)
+                self.voice_connection_error.emit(f"Media connection failed: {detail}")
+            elif event_type == "disconnected":
+                log.warning("Media disconnected: %s", detail)
+                self.voice_connection_error.emit(f"Media disconnected: {detail}")
+            elif event_type == "audio_error":
+                log.error("Audio error: %s", detail)
+                self.voice_connection_error.emit(f"Audio error: {detail}")
 
     def voice_set_mute(self, muted: bool) -> None:
         self.voice_self_mute = muted
@@ -543,6 +590,7 @@ class AppState(QObject):
                     self._layout.rooms = [r for r in self._layout.rooms if r.room_id != rid]
                 # If we're in this room, force-disconnect
                 if rid == self.voice_room_id:
+                    self._stop_media_poll()
                     if self._media_client is not None:
                         try:
                             self._media_client.disconnect()
@@ -550,6 +598,8 @@ class AppState(QObject):
                         except Exception:
                             log.warning("Error stopping media client after room %d deleted", rid, exc_info=True)
                         self._media_client = None
+                    self._media_url = None
+                    self._media_cert_der = None
                     self.voice_room_id = None
                     self.voice_state_changed.emit()
                 self.layout_changed.emit()
@@ -626,9 +676,16 @@ class AppState(QObject):
                 rid = getattr(e, "room_id", None)
                 if rid == self.voice_room_id and self._media_client is not None:
                     token = getattr(e, "media_token", None)
-                    if token:
+                    if token and self._media_url is not None:
                         try:
-                            self._media_client.reconnect(token)
+                            self._media_client.connect(
+                                url=self._media_url,
+                                token=token,
+                                room_id=rid,
+                                user_id=self.user_id,
+                                cert_der=self._media_cert_der,
+                            )
+                            log.info("Media client reconnected with refreshed token")
                         except Exception:
-                            log.warning("Failed to reconnect media client with new token")
+                            log.warning("Failed to reconnect media client with new token", exc_info=True)
             self._run_on_main.emit(_apply)
