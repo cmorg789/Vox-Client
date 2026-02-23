@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import QSize, Qt
+
+log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,

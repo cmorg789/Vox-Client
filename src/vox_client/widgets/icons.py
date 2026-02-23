@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QIcon, QPainter, QPixmap

@@ -1,7 +1,10 @@
 """Resource path resolver for both development and frozen (PyInstaller) mode."""
 
+import logging
 import sys
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def _base_dir() -> Path:

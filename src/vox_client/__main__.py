@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 
 from PyQt6.QtCore import Qt
@@ -11,6 +12,8 @@ from PyQt6.QtWidgets import QApplication
 import qasync
 
 from vox_client.app import VoxApp
+
+log = logging.getLogger(__name__)
 
 
 def main() -> None:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
 
 from catppuccin import PALETTE
 from PyQt6.QtCore import QSettings
