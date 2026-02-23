@@ -28,6 +28,25 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Sync version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i.bak "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+          rm -f pyproject.toml.bak
+
+      - name: Get pip cache dir
+        id: pip-cache
+        shell: bash
+        run: echo "dir=$(pip cache dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: pip-${{ matrix.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ matrix.os }}-
+
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: |
