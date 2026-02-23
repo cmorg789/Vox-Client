@@ -1,18 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for Vox Client – onedir build with macOS .app bundle."""
 
+import glob
+import os
 import sys
 import warnings
-from PyInstaller.utils.hooks import collect_dynamic_libs
 
-# Collect the native vox_media Rust extension (.so / .pyd)
+# Collect the native vox_media Rust extension (.so / .pyd / .dylib).
+# collect_dynamic_libs() misses pyo3 extensions that live inside a package,
+# so we locate the native binary by globbing the installed package directory.
+vox_media_binaries = []
 try:
-    vox_media_binaries = collect_dynamic_libs("vox_media")
-    if not vox_media_binaries:
-        warnings.warn("vox_media found but no dynamic libs collected — native media may not work!")
-except Exception:
-    warnings.warn("Could not collect vox_media binaries — native media will not work!")
-    vox_media_binaries = []
+    import vox_media as _vm
+    pkg_dir = os.path.dirname(_vm.__file__)
+    # Look for the native extension: .pyd (Windows), .so (Linux/macOS)
+    for pattern in ("*.pyd", "*.so"):
+        for path in glob.glob(os.path.join(pkg_dir, pattern)):
+            fname = os.path.basename(path)
+            # Skip __init__ or pure-python files that somehow match
+            if fname.startswith("__"):
+                continue
+            vox_media_binaries.append((path, "vox_media"))
+    if vox_media_binaries:
+        print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
+        for src, dst in vox_media_binaries:
+            print(f"  {src} -> {dst}/")
+    else:
+        warnings.warn("vox_media package found but no native extension located — audio will not work!")
+except ImportError:
+    warnings.warn("vox_media not installed — native media will not be bundled")
 
 a = Analysis(
     ["src/vox_client/__main__.py"],
@@ -88,6 +104,7 @@ a = Analysis(
         "vox_sdk.api.webhooks",
         # Native media extension
         "vox_media",
+        "vox_media.vox_media",
         "vox_sdk._media",
         # Transport
         "httpx",
