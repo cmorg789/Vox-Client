@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 
 log = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
+# %-d is POSIX-only; Windows uses %#d for no-padding day
+_DATE_FMT = "%B %#d, %Y" if sys.platform == "win32" else "%B %-d, %Y"
+
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
@@ -171,7 +176,7 @@ class MessageList(QScrollArea):
 
         dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc) if timestamp else None
         time_str = dt.strftime("%H:%M") if dt else ""
-        date_str = dt.strftime("%B %-d, %Y") if dt else None
+        date_str = dt.strftime(_DATE_FMT) if dt else None
 
         # Date divider
         if date_str and date_str != self._last_date:
@@ -257,41 +262,55 @@ class MessageList(QScrollArea):
         ))
 
     def _on_message_received(self, event: object) -> None:
-        feed_id = getattr(event, "feed_id", None)
-        if feed_id != self._current_feed_id:
-            return
-        self._add_message(
-            getattr(event, "author_id", None),
-            getattr(event, "timestamp", 0),
-            getattr(event, "body", None),
-            msg_id=getattr(event, "msg_id", None),
-        )
-        self._scroll_to_bottom()
+        try:
+            feed_id = getattr(event, "feed_id", None)
+            if feed_id != self._current_feed_id:
+                return
+            self._add_message(
+                getattr(event, "author_id", None),
+                getattr(event, "timestamp", 0),
+                getattr(event, "body", None),
+                msg_id=getattr(event, "msg_id", None),
+            )
+            self._scroll_to_bottom()
+        except Exception:
+            log.error("Error handling message_received event", exc_info=True)
 
     def _on_message_updated(self, event: object) -> None:
-        feed_id = getattr(event, "feed_id", None)
-        if feed_id != self._current_feed_id:
-            return
-        msg_id = getattr(event, "msg_id", None)
-        if msg_id is None or msg_id not in self._msg_widgets:
-            return
-        body = getattr(event, "body", None) or ""
-        state = AppState.instance()
-        c = state.theme.colors
-        rendered = _render_body(body, c.accent_bright, c.status_success, c.bg_input, c.mention_bg)
-        edited_tag = (
-            f' <span style="color: {c.text_dim}; font-size: 11px;">(edited)</span>'
-        )
-        self._msg_widgets[msg_id].setText(rendered + edited_tag)
+        try:
+            feed_id = getattr(event, "feed_id", None)
+            if feed_id != self._current_feed_id:
+                return
+            msg_id = getattr(event, "msg_id", None)
+            if msg_id is None or msg_id not in self._msg_widgets:
+                return
+            widget = self._msg_widgets[msg_id]
+            if sip.isdeleted(widget):
+                self._msg_widgets.pop(msg_id, None)
+                return
+            body = getattr(event, "body", None) or ""
+            state = AppState.instance()
+            c = state.theme.colors
+            rendered = _render_body(body, c.accent_bright, c.status_success, c.bg_input, c.mention_bg)
+            edited_tag = (
+                f' <span style="color: {c.text_dim}; font-size: 11px;">(edited)</span>'
+            )
+            widget.setText(rendered + edited_tag)
+        except Exception:
+            log.error("Error handling message_updated event", exc_info=True)
 
     def _on_message_deleted(self, event: object) -> None:
-        feed_id = getattr(event, "feed_id", None)
-        if feed_id != self._current_feed_id:
-            return
-        msg_id = getattr(event, "msg_id", None)
-        if msg_id is None or msg_id not in self._msg_rows:
-            return
-        for widget in self._msg_rows.pop(msg_id):
-            self._layout.removeWidget(widget)
-            widget.deleteLater()
-        self._msg_widgets.pop(msg_id, None)
+        try:
+            feed_id = getattr(event, "feed_id", None)
+            if feed_id != self._current_feed_id:
+                return
+            msg_id = getattr(event, "msg_id", None)
+            if msg_id is None or msg_id not in self._msg_rows:
+                return
+            for widget in self._msg_rows.pop(msg_id):
+                if not sip.isdeleted(widget):
+                    self._layout.removeWidget(widget)
+                    widget.deleteLater()
+            self._msg_widgets.pop(msg_id, None)
+        except Exception:
+            log.error("Error handling message_deleted event", exc_info=True)

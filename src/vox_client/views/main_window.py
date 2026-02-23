@@ -348,28 +348,37 @@ class MainWindow(QMainWindow):
 
     @asyncSlot(int)
     async def _on_feed_selected(self, feed_id: int) -> None:
-        self._state.current_feed_id = feed_id
-        name = self._state.get_feed_name(feed_id)
-        self._chat_header.set_channel(feed_id)
-        self._chat_input.set_channel_name(name)
-        # Clear typing indicators from previous channel
-        for timer in self._typers.values():
-            timer.deleteLater()
-        self._typers.clear()
-        self._typing_label.setText("")
-        await self._message_list.load_messages(feed_id)
+        try:
+            self._state.current_feed_id = feed_id
+            name = self._state.get_feed_name(feed_id)
+            self._chat_header.set_channel(feed_id)
+            self._chat_input.set_channel_name(name)
+            # Clear typing indicators from previous channel
+            for timer in self._typers.values():
+                timer.deleteLater()
+            self._typers.clear()
+            self._typing_label.setText("")
+            await self._message_list.load_messages(feed_id)
+        except Exception:
+            log.error("Failed to select feed %d", feed_id, exc_info=True)
 
     @asyncSlot(int)
     async def _on_room_selected(self, room_id: int) -> None:
-        state = self._state
-        if state.voice_room_id == room_id:
-            await state.voice_leave()
-        else:
-            await state.voice_join(room_id)
+        try:
+            state = self._state
+            if state.voice_room_id == room_id:
+                await state.voice_leave()
+            else:
+                await state.voice_join(room_id)
+        except Exception:
+            log.error("Failed to handle room selection %d", room_id, exc_info=True)
 
     @asyncSlot()
     async def _on_voice_disconnect(self) -> None:
-        await self._state.voice_leave()
+        try:
+            await self._state.voice_leave()
+        except Exception:
+            log.error("Failed to disconnect from voice", exc_info=True)
 
     @asyncSlot(str)
     async def _on_send(self, text: str) -> None:

@@ -45,6 +45,9 @@ from vox_client.widgets.ui_helpers import (
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 
+# %-d is POSIX-only; Windows uses %#d for no-padding day
+_DATE_FMT = "%B %#d, %Y" if sys.platform == "win32" else "%B %-d, %Y"
+
 
 # -- Account Page ------------------------------------------------------------
 
@@ -198,7 +201,7 @@ class _AccountPage(QWidget):
             from datetime import datetime, timezone
             dt = datetime.fromtimestamp(user.created_at / 1000, tz=timezone.utc)
             self._info_layout.addWidget(field_label("Joined"))
-            joined_lbl = QLabel(dt.strftime("%B %-d, %Y"))
+            joined_lbl = QLabel(dt.strftime(_DATE_FMT))
             joined_lbl.setStyleSheet(
                 f"color: {c.text_secondary}; font-size: 12px; border: none; padding: 2px 0;"
             )

@@ -16,6 +16,28 @@ from vox_client.app import VoxApp
 log = logging.getLogger(__name__)
 
 
+def _install_exception_hooks() -> None:
+    """Install global handlers so unhandled exceptions always get logged."""
+
+    def _excepthook(exc_type, exc_value, exc_tb):  # noqa: ANN001
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        log.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
+
+    sys.excepthook = _excepthook
+
+    def _asyncio_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:  # noqa: ANN401
+        exc = context.get("exception")
+        msg = context.get("message", "Unhandled asyncio exception")
+        if exc is not None:
+            log.critical("%s", msg, exc_info=exc)
+        else:
+            log.critical("%s", msg)
+
+    asyncio.get_event_loop().set_exception_handler(_asyncio_handler)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="vox_client")
     parser.add_argument(
@@ -43,6 +65,7 @@ def main() -> None:
     qt_app = QApplication(sys.argv)
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
+    _install_exception_hooks()
 
     vox_app = VoxApp(qt_app)
     vox_app.show_main()

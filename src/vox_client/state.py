@@ -172,9 +172,12 @@ class AppState(QObject):
         if self.voice_room_id is not None:
             await self.voice_leave()
         try:
+            log.info("Joining voice room %d", room_id)
             resp: VoiceJoinResponse = await self.client.voice.join(
                 room_id, self_mute=self.voice_self_mute, self_deaf=self.voice_self_deaf,
             )
+            log.debug("Voice join response: media_url=%s, members=%d",
+                       resp.media_url, len(resp.members))
             self.voice_room_id = room_id
             self._voice_room_members[room_id] = {m.user_id: m for m in resp.members}
             # Start media client if the native extension is available
@@ -185,8 +188,12 @@ class AppState(QObject):
                 cert_resp = await self.client.voice.get_media_cert()
                 if cert_resp is not None:
                     cert_der = bytes(cert_resp.cert_der)
+                    log.debug("Got SFU cert (%d bytes)", len(cert_der))
+                else:
+                    log.warning("No SFU cert returned – connecting without cert pinning")
                 mc = VoxMediaClient()
                 mc.start()
+                log.debug("Media client started")
                 mc.set_mute(self.voice_self_mute)
                 mc.set_deaf(self.voice_self_deaf)
                 # Apply saved AV settings
@@ -195,9 +202,13 @@ class AppState(QObject):
                 input_vol = settings.value("av/input_volume", 100, type=int)
                 output_vol = settings.value("av/output_volume", 100, type=int)
                 gate = settings.value("av/noise_gate", 30, type=int)
+                log.debug("AV settings: input=%d%% output=%d%% gate=%d%%",
+                          input_vol, output_vol, gate)
                 mc.set_input_volume(_log_volume(input_vol))
                 mc.set_output_volume(_log_volume(output_vol))
                 mc.set_noise_gate(gate / 100.0)
+                log.info("Connecting media client to %s (room=%d, user=%d)",
+                         resp.media_url, room_id, self.user_id)
                 mc.connect(
                     url=resp.media_url,
                     token=resp.media_token,
@@ -209,11 +220,14 @@ class AppState(QObject):
                 self._media_url = resp.media_url
                 self._media_cert_der = cert_der
                 self._start_media_poll()
+                log.info("Media client connected and polling started")
             except ImportError:
-                log.warning("vox_media not available – audio disabled")
+                log.warning("vox_media native extension not available – audio disabled")
+            except Exception:
+                log.error("Failed to start media client for room %d", room_id, exc_info=True)
             self.voice_state_changed.emit()
         except Exception as exc:
-            log.error("Failed to join voice room %d: %s", room_id, exc)
+            log.error("Failed to join voice room %d: %s", room_id, exc, exc_info=True)
             self.voice_connection_error.emit(str(exc))
 
     async def voice_leave(self) -> None:
@@ -221,12 +235,14 @@ class AppState(QObject):
         if self.voice_room_id is None:
             return
         room_id = self.voice_room_id
+        log.info("Leaving voice room %d", room_id)
         # Disconnect and stop media client
         self._stop_media_poll()
         if self._media_client is not None:
             try:
                 self._media_client.disconnect()
                 self._media_client.stop()
+                log.debug("Media client stopped for room %d", room_id)
             except Exception:
                 log.warning("Error disconnecting media client for room %d", room_id, exc_info=True)
             self._media_client = None
@@ -260,23 +276,32 @@ class AppState(QObject):
         if mc is None:
             self._stop_media_poll()
             return
-        # Drain all pending events
-        while True:
-            ev = mc.poll_event()
-            if ev is None:
-                break
-            event_type, detail = ev
-            log.debug("Media event: %s %s", event_type, detail)
-            self.voice_media_event.emit(event_type, detail)
-            if event_type == "connect_failed":
-                log.error("Media connection failed: %s", detail)
-                self.voice_connection_error.emit(f"Media connection failed: {detail}")
-            elif event_type == "disconnected":
-                log.warning("Media disconnected: %s", detail)
-                self.voice_connection_error.emit(f"Media disconnected: {detail}")
-            elif event_type == "audio_error":
-                log.error("Audio error: %s", detail)
-                self.voice_connection_error.emit(f"Audio error: {detail}")
+        try:
+            # Drain all pending events
+            while True:
+                ev = mc.poll_event()
+                if ev is None:
+                    break
+                event_type, detail = ev
+                log.debug("Media event: %s %s", event_type, detail)
+                self.voice_media_event.emit(event_type, detail)
+                if event_type == "connected":
+                    log.info("Media transport connected")
+                elif event_type == "connect_failed":
+                    log.error("Media connection failed: %s", detail)
+                    self.voice_connection_error.emit(f"Media connection failed: {detail}")
+                elif event_type == "disconnected":
+                    log.warning("Media disconnected: %s", detail)
+                    self.voice_connection_error.emit(f"Media disconnected: {detail}")
+                elif event_type == "reconnecting":
+                    log.info("Media reconnecting: %s", detail)
+                elif event_type == "audio_error":
+                    log.error("Audio error: %s", detail)
+                    self.voice_connection_error.emit(f"Audio error: {detail}")
+                elif event_type == "video_error":
+                    log.error("Video error: %s", detail)
+        except Exception:
+            log.error("Error polling media events", exc_info=True)
 
     def voice_set_mute(self, muted: bool) -> None:
         self.voice_self_mute = muted
@@ -652,32 +677,38 @@ class AppState(QObject):
         @self.gateway.on("voice_state_update")
         async def _on_voice_state_update(event):  # noqa: ANN001
             def _apply(e=event):  # noqa: ANN001
-                rid = getattr(e, "room_id", None)
-                if rid is None:
-                    return
-                members_raw = getattr(e, "members", [])
-                members = {}
-                for m in members_raw:
-                    if isinstance(m, dict):
-                        vm = VoiceMemberData.model_validate(m)
+                try:
+                    rid = getattr(e, "room_id", None)
+                    if rid is None:
+                        log.warning("voice_state_update missing room_id")
+                        return
+                    members_raw = getattr(e, "members", [])
+                    members = {}
+                    for m in members_raw:
+                        if isinstance(m, dict):
+                            vm = VoiceMemberData.model_validate(m)
+                        else:
+                            vm = m
+                        members[vm.user_id] = vm
+                    log.debug("voice_state_update room=%d members=%d", rid, len(members))
+                    if members:
+                        self._voice_room_members[rid] = members
                     else:
-                        vm = m
-                    members[vm.user_id] = vm
-                if members:
-                    self._voice_room_members[rid] = members
-                else:
-                    self._voice_room_members.pop(rid, None)
-                self.voice_state_changed.emit()
+                        self._voice_room_members.pop(rid, None)
+                    self.voice_state_changed.emit()
+                except Exception:
+                    log.error("Error handling voice_state_update", exc_info=True)
             self._run_on_main.emit(_apply)
 
         @self.gateway.on("media_token_refresh")
         async def _on_media_token_refresh(event):  # noqa: ANN001
             def _apply(e=event):  # noqa: ANN001
-                rid = getattr(e, "room_id", None)
-                if rid == self.voice_room_id and self._media_client is not None:
-                    token = getattr(e, "media_token", None)
-                    if token and self._media_url is not None:
-                        try:
+                try:
+                    rid = getattr(e, "room_id", None)
+                    log.debug("media_token_refresh for room=%s (current=%s)", rid, self.voice_room_id)
+                    if rid == self.voice_room_id and self._media_client is not None:
+                        token = getattr(e, "media_token", None)
+                        if token and self._media_url is not None:
                             self._media_client.connect(
                                 url=self._media_url,
                                 token=token,
@@ -686,6 +717,9 @@ class AppState(QObject):
                                 cert_der=self._media_cert_der,
                             )
                             log.info("Media client reconnected with refreshed token")
-                        except Exception:
-                            log.warning("Failed to reconnect media client with new token", exc_info=True)
+                        else:
+                            log.warning("media_token_refresh missing token or media_url "
+                                        "(token=%s, url=%s)", bool(token), self._media_url)
+                except Exception:
+                    log.error("Failed to handle media_token_refresh", exc_info=True)
             self._run_on_main.emit(_apply)
