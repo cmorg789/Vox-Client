@@ -73,6 +73,20 @@ jobs:
         if: runner.os == 'Windows'
         run: .venv\Scripts\python -m PyInstaller vox-client.spec --noconfirm
 
+      - name: Verify native extension bundled
+        shell: bash
+        run: |
+          echo "Checking for vox_media native extension in bundle..."
+          if ls dist/vox-client/_internal/vox_media/vox_media.*.so 2>/dev/null || \
+             ls dist/vox-client/_internal/vox_media/vox_media.*.pyd 2>/dev/null; then
+            echo "✓ vox_media native extension found"
+          else
+            echo "✗ vox_media native extension NOT found — audio will not work!"
+            echo "Bundle contents of vox_media/:"
+            ls -la dist/vox-client/_internal/vox_media/ 2>/dev/null || echo "  (directory missing)"
+            exit 1
+          fi
+
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
