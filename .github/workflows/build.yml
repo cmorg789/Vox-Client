@@ -18,7 +18,7 @@ jobs:
           - os: ubuntu-latest
             artifact: Vox-Client-linux.tar.gz
           - os: macos-latest
-            artifact: Vox-Client-macos.zip
+            artifact: Vox-Client-macos.dmg
           - os: windows-latest
             artifact: Vox-Client-windows.zip
     steps:
@@ -56,7 +56,16 @@ jobs:
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: cd dist && zip -r "../${{ matrix.artifact }}" "Vox Client.app"
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Vox Client" \
+            --window-size 600 400 \
+            --icon-size 128 \
+            --icon "Vox Client.app" 150 200 \
+            --app-drop-link 450 200 \
+            "${{ matrix.artifact }}" \
+            "dist/Vox Client.app"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'

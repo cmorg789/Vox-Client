@@ -107,7 +107,7 @@ class AppState(QObject):
     def get_display_name(self, user_id: int) -> str:
         member = self._members.get(user_id)
         if member:
-            return member.nickname or member.display_name or str(user_id)
+            return member.nickname or member.display_name or member.username or str(user_id)
         return str(user_id)
 
     def get_role_color(self, user_id: int) -> str | None:
@@ -399,6 +399,7 @@ class AppState(QObject):
                 if uid is not None:
                     self._members[uid] = MemberResponse(
                         user_id=uid,
+                        username=getattr(e, "username", ""),
                         display_name=getattr(e, "display_name", None),
                     )
                 self.member_joined.emit(e)
