@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
@@ -320,6 +324,7 @@ class UserPanel(QFrame):
 
     def _toggle_mute(self) -> None:
         self._muted = not self._muted
+        log.debug("Mute toggled: %s", self._muted)
         state = AppState.instance()
         state.voice_set_mute(self._muted)
         c = state.theme.colors
@@ -334,6 +339,7 @@ class UserPanel(QFrame):
 
     def _toggle_deafen(self) -> None:
         self._deafened = not self._deafened
+        log.debug("Deafen toggled: %s", self._deafened)
         state = AppState.instance()
         state.voice_set_deaf(self._deafened)
         c = state.theme.colors

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -118,6 +122,7 @@ class _OverviewPage(QWidget):
             state.server_icon = result.icon
             set_status(self._status, "saved", "success")
         except Exception as exc:
+            log.error("Failed to save server settings: %s", exc)
             set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
@@ -369,6 +374,7 @@ class _RoleEditPanel(QWidget):
             set_status(self._status, "saved", "success")
             self.role_saved.emit()
         except Exception as exc:
+            log.error("Failed to save role %d: %s", self._role_id, exc)
             set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
@@ -387,6 +393,7 @@ class _RoleEditPanel(QWidget):
             self._role_id = None
             self.role_deleted.emit()
         except Exception as exc:
+            log.error("Failed to delete role %d: %s", self._role_id, exc)
             set_status(self._status, str(exc), "error")
         finally:
             self._delete_btn.setEnabled(True)
@@ -485,6 +492,7 @@ class _RolesPage(QWidget):
             self._refresh_list()
             self._edit_panel.load_role(result.role_id)
         except Exception as exc:
+            log.error("Failed to create role: %s", exc)
             set_status(self._create_status, str(exc)[:30], "error")
         finally:
             self._create_btn.setEnabled(True)
@@ -563,8 +571,10 @@ class _MemberRow(QWidget):
         self._kick_btn.setEnabled(False)
         try:
             await state.client.members.remove(self.user_id)
+            log.info("Kicked member %d", self.user_id)
             set_status(self._status, "kicked", "success")
         except Exception as exc:
+            log.error("Failed to kick member %d: %s", self.user_id, exc)
             set_status(self._status, str(exc)[:20], "error")
         finally:
             self._kick_btn.setEnabled(True)
@@ -577,8 +587,10 @@ class _MemberRow(QWidget):
         self._ban_btn.setEnabled(False)
         try:
             await state.client.members.ban(self.user_id)
+            log.info("Banned member %d", self.user_id)
             set_status(self._status, "banned", "success")
         except Exception as exc:
+            log.error("Failed to ban member %d: %s", self.user_id, exc)
             set_status(self._status, str(exc)[:20], "error")
         finally:
             self._ban_btn.setEnabled(True)
@@ -647,8 +659,10 @@ class _BanRow(QWidget):
         self._unban_btn.setEnabled(False)
         try:
             await state.client.members.unban(self.user_id)
+            log.info("Unbanned member %d", self.user_id)
             set_status(self._status, "unbanned", "success")
         except Exception as exc:
+            log.error("Failed to unban member %d: %s", self.user_id, exc)
             set_status(self._status, str(exc)[:20], "error")
         finally:
             self._unban_btn.setEnabled(True)
@@ -722,7 +736,7 @@ class _MembersPage(QWidget):
                 self._ban_layout.addWidget(row)
                 self._ban_rows.append(row)
         except Exception:
-            pass
+            log.warning("Failed to load ban list", exc_info=True)
 
 
 # -- Limits Page -------------------------------------------------------------
@@ -800,6 +814,7 @@ class _LimitsPage(QWidget):
                 self._fields_layout.addWidget(row_w)
                 self._fields[key] = inp
         except Exception as exc:
+            log.warning("Failed to load server limits: %s", exc)
             set_status(self._status, str(exc), "error")
 
     @asyncSlot()
@@ -820,6 +835,7 @@ class _LimitsPage(QWidget):
             await state.client.server.update_limits(**kwargs)
             set_status(self._status, "saved", "success")
         except Exception as exc:
+            log.error("Failed to save server limits: %s", exc)
             set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)

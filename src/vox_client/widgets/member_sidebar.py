@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
@@ -108,6 +112,7 @@ class MemberSidebar(QFrame):
 
     def refresh(self) -> None:
         """Rebuild the member list from cached data."""
+        log.debug("Refreshing member sidebar (%d members cached)", len(AppState.instance()._members))
         state = AppState.instance()
         c = state.theme.colors
 

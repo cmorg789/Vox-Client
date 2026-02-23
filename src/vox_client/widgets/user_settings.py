@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import sys
+
+log = logging.getLogger(__name__)
 
 from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPixmap
@@ -174,6 +177,7 @@ class _AccountPage(QWidget):
         try:
             user = await state.client.users.get(state.user_id)
         except Exception:
+            log.warning("Failed to load user profile for user %d", state.user_id, exc_info=True)
             return
 
         c = state.theme.colors
@@ -235,6 +239,7 @@ class _AccountPage(QWidget):
 
             set_status(self._status, "saved", "success")
         except Exception as exc:
+            log.error("Failed to save profile: %s", exc)
             set_status(self._status, str(exc), "error")
         finally:
             self._save_btn.setEnabled(True)
@@ -763,6 +768,7 @@ class _AudioVideoPage(QWidget):
             self._camera.start()
             self._camera_preview.setText("Starting camera...")
         except Exception:
+            log.warning("Failed to start camera", exc_info=True)
             self._camera_preview.setText("Camera unavailable")
 
     def _on_camera_error(self, error, description: str) -> None:  # noqa: ANN001
@@ -826,7 +832,7 @@ class _AudioVideoPage(QWidget):
             self._audio_io = self._audio_source.start()
             self._audio_io.readyRead.connect(self._on_mic_data)
         except Exception:
-            pass
+            log.warning("Failed to start mic capture", exc_info=True)
 
     def _on_mic_data(self) -> None:
         if self._audio_io is None:
@@ -921,6 +927,7 @@ class _AudioVideoPage(QWidget):
             QTimer.singleShot(int((dur + gap) * 1000), _show_right)
             QTimer.singleShot(int(total_duration * 1000) + 200, _cleanup)
         except Exception as exc:
+            log.warning("Speaker test failed: %s", exc)
             set_status(self._status, f"speaker test failed: {exc}", "error")
             self._speaker_test_btn.setEnabled(True)
 
@@ -1032,13 +1039,13 @@ class _PrivacyPage(QWidget):
             if rb:
                 rb.setChecked(True)
         except Exception:
-            pass
+            log.warning("Failed to load DM settings", exc_info=True)
 
         try:
             block_resp = await state.client.users.list_blocks(state.user_id)
             self._populate_blocks(block_resp.blocked_user_ids)
         except Exception:
-            pass
+            log.warning("Failed to load block list", exc_info=True)
 
     def _populate_blocks(self, blocked_ids: list[int]) -> None:
         c = AppState.instance().theme.colors
@@ -1093,6 +1100,7 @@ class _PrivacyPage(QWidget):
             await state.client.users.update_dm_settings(state.user_id, selected)
             set_status(self._status, "saved", "success")
         except Exception as exc:
+            log.error("Failed to update DM settings: %s", exc)
             set_status(self._status, str(exc), "error")
 
     @asyncSlot()
@@ -1106,6 +1114,7 @@ class _PrivacyPage(QWidget):
             self._populate_blocks(block_resp.blocked_user_ids)
             set_status(self._status, "unblocked", "success")
         except Exception as exc:
+            log.error("Failed to unblock user %d: %s", target_id, exc)
             set_status(self._status, str(exc), "error")
 
 

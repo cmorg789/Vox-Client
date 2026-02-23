@@ -220,14 +220,14 @@ class AppState(QObject):
                 self._media_client.disconnect()
                 self._media_client.stop()
             except Exception:
-                pass
+                log.warning("Error disconnecting media client for room %d", room_id, exc_info=True)
             self._media_client = None
         # Tell server we're leaving
         if self.client is not None:
             try:
                 await self.client.voice.leave(room_id)
             except Exception:
-                pass
+                log.warning("Error sending voice leave for room %d", room_id, exc_info=True)
         self.voice_room_id = None
         self.voice_state_changed.emit()
 
@@ -237,7 +237,7 @@ class AppState(QObject):
             try:
                 self._media_client.set_mute(muted)
             except Exception:
-                pass
+                log.warning("Failed to set mute=%s on media client", muted, exc_info=True)
 
     def voice_set_deaf(self, deafened: bool) -> None:
         self.voice_self_deaf = deafened
@@ -245,28 +245,28 @@ class AppState(QObject):
             try:
                 self._media_client.set_deaf(deafened)
             except Exception:
-                pass
+                log.warning("Failed to set deaf=%s on media client", deafened, exc_info=True)
 
     def voice_set_input_volume(self, volume: float) -> None:
         if self._media_client is not None:
             try:
                 self._media_client.set_input_volume(volume)
             except Exception:
-                pass
+                log.warning("Failed to set input volume on media client", exc_info=True)
 
     def voice_set_output_volume(self, volume: float) -> None:
         if self._media_client is not None:
             try:
                 self._media_client.set_output_volume(volume)
             except Exception:
-                pass
+                log.warning("Failed to set output volume on media client", exc_info=True)
 
     def voice_set_noise_gate(self, threshold: float) -> None:
         if self._media_client is not None:
             try:
                 self._media_client.set_noise_gate(threshold)
             except Exception:
-                pass
+                log.warning("Failed to set noise gate on media client", exc_info=True)
 
     def voice_set_user_volume(self, user_id: int, volume: float) -> None:
         self._user_volumes[user_id] = volume
@@ -274,7 +274,7 @@ class AppState(QObject):
             try:
                 self._media_client.set_user_volume(user_id, volume)
             except Exception:
-                pass
+                log.warning("Failed to set user volume for %d on media client", user_id, exc_info=True)
 
     def voice_get_user_volume(self, user_id: int) -> float:
         return self._user_volumes.get(user_id, 1.0)
@@ -548,7 +548,7 @@ class AppState(QObject):
                             self._media_client.disconnect()
                             self._media_client.stop()
                         except Exception:
-                            pass
+                            log.warning("Error stopping media client after room %d deleted", rid, exc_info=True)
                         self._media_client = None
                     self.voice_room_id = None
                     self.voice_state_changed.emit()

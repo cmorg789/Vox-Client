@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
+
+log = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
 from PyQt6.QtCore import Qt, QTimer
@@ -101,10 +104,15 @@ class MessageList(QScrollArea):
 
         state = AppState.instance()
         assert state.client is not None
-        result = await state.client.messages.list(feed_id, limit=50)
+        try:
+            result = await state.client.messages.list(feed_id, limit=50)
+        except Exception:
+            log.error("Failed to load messages for feed %d", feed_id, exc_info=True)
+            return
 
         # Race guard: if user switched channels while awaiting, discard
         if self._current_feed_id != feed_id:
+            log.debug("Discarding stale message fetch for feed %d (now on %d)", feed_id, self._current_feed_id)
             return
 
         for msg in reversed(result.messages):

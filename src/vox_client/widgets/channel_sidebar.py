@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from PyQt6.QtCore import QMimeData, QPoint, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
@@ -245,6 +249,7 @@ class _CreateSpaceDialog(QDialog):
             # Gateway event will update caches and emit layout_changed
             self.accept()
         except Exception as exc:
+            log.error("Failed to create %s in category %s: %s", ch_type, self._category_id, exc)
             self._status.setText(str(exc)[:40])
             self._status.setStyleSheet(f"color: {c.status_danger}; font-size: 11px; border: none;")
             self._create_btn.setEnabled(True)
@@ -363,6 +368,7 @@ class _RenameDialog(QDialog):
             state.layout_changed.emit()
             self.accept()
         except Exception as exc:
+            log.error("Failed to rename %s %d: %s", self._item_type, self._item_id, exc)
             self._status.setText(str(exc)[:40])
             self._status.setStyleSheet(f"color: {c.status_danger}; font-size: 11px; border: none;")
             self._save_btn.setEnabled(True)
@@ -434,6 +440,7 @@ class _CreateCategoryDialog(QDialog):
             # Gateway event will update caches and emit layout_changed
             self.accept()
         except Exception as exc:
+            log.error("Failed to create category: %s", exc)
             self._status.setText(str(exc)[:40])
             self._status.setStyleSheet(f"color: {c.status_danger}; font-size: 11px; border: none;")
             self._create_btn.setEnabled(True)
@@ -597,7 +604,7 @@ class _CategoryHeader(QWidget):
                 ]
             state.layout_changed.emit()
         except Exception:
-            pass
+            log.error("Failed to delete category %d", self.category_id, exc_info=True)
 
 
 # -- Channel item ------------------------------------------------------------
@@ -784,7 +791,7 @@ class _ChannelItem(QWidget):
                     ]
             state.layout_changed.emit()
         except Exception:
-            pass
+            log.error("Failed to delete %s %d", self.item_type, self.feed_id, exc_info=True)
 
 
 
@@ -1174,7 +1181,7 @@ class ChannelSidebar(QWidget):
             )
             await state.refresh_layout()
         except Exception:
-            pass
+            log.error("Failed to reorder category %d", category_id, exc_info=True)
 
     def _handle_channel_drop_at(self, data: str, drop_layout_idx: int) -> None:
         """Determine target category and position from the indicator's layout index."""
@@ -1225,4 +1232,4 @@ class ChannelSidebar(QWidget):
             # Refetch the full layout so ALL items' positions are up-to-date
             await state.refresh_layout()
         except Exception:
-            pass
+            log.error("Failed to reorder %s %d", item_type, item_id, exc_info=True)

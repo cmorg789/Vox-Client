@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             )
             fut.result(timeout=5)
         except Exception:
-            pass  # Non-critical
+            log.debug("Failed to set initial presence", exc_info=True)
 
         # Seed our own presence so the UI shows "Online" immediately
         # (the server's presence_update echo arrives asynchronously).
@@ -376,7 +376,10 @@ class MainWindow(QMainWindow):
         feed_id = self._state.current_feed_id
         if feed_id is None or self._state.client is None:
             return
-        await self._state.client.messages.send(feed_id, body=text)
+        try:
+            await self._state.client.messages.send(feed_id, body=text)
+        except Exception:
+            log.error("Failed to send message to feed %d", feed_id, exc_info=True)
 
     # -- typing indicator ------------------------------------------------------
 
@@ -432,7 +435,7 @@ class MainWindow(QMainWindow):
                     gw.send_typing(feed_id), gw_loop,
                 )
             except Exception:
-                pass  # Gateway not yet connected
+                log.debug("Failed to send typing indicator", exc_info=True)
 
     # -- presence --------------------------------------------------------------
 

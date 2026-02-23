@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from PyQt6.QtCore import QSize, Qt, QUrl
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
@@ -64,6 +68,7 @@ class AvatarWidget(QLabel):
 
     def _on_reply(self, reply: QNetworkReply) -> None:
         if reply.error() != QNetworkReply.NetworkError.NoError:
+            log.debug("Avatar fetch failed for user %d: %s", self._user_id, reply.errorString())
             reply.deleteLater()
             return
         data = reply.readAll()
