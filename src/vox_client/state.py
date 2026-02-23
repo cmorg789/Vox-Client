@@ -222,7 +222,7 @@ class AppState(QObject):
                 self._start_media_poll()
                 log.info("Media client connected and polling started")
             except ImportError:
-                log.warning("vox_media native extension not available – audio disabled")
+                log.warning("vox_media native extension not available – audio disabled", exc_info=True)
             except Exception:
                 log.error("Failed to start media client for room %d", room_id, exc_info=True)
             self.voice_state_changed.emit()

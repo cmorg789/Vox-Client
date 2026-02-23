@@ -112,7 +112,7 @@ a = Analysis(
         "zstandard",
         "pydantic",
     ],
-    hookspath=[],
+    hookspath=["hooks"],
     hooksconfig={},
     runtime_hooks=[],
     excludes=["tkinter", "unittest", "test", "xmlrpc"],
