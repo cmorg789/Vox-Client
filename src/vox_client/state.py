@@ -347,6 +347,7 @@ class AppState(QObject):
     # -- gateway setup -------------------------------------------------------
 
     def set_gateway(self, gw: GatewayClient) -> None:
+        log.info("Setting gateway and registering event handlers")
         self.gateway = gw
         self._register_handlers()
 

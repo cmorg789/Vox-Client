@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import sys
 
@@ -13,6 +14,24 @@ from vox_client.app import VoxApp
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(prog="vox_client")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default=None,
+        help="Override the persisted log level",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Also log to stderr",
+    )
+    args = parser.parse_args()
+
+    # Configure logging before anything else
+    from vox_client.logging_config import setup_logging
+    setup_logging(level=args.log_level, stderr=args.verbose)
+
     # Enable high-DPI scaling with passthrough (no rounding) so text and
     # widgets render at native Retina resolution instead of being upscaled.
     QApplication.setHighDpiScaleFactorRoundingPolicy(

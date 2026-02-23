@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QDialog,
@@ -21,6 +23,8 @@ from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.icons import tinted_icon
 from vox_client.widgets.ui_helpers import action_button, close_button, field_label
+
+log = logging.getLogger(__name__)
 
 
 class LoginDialog(QDialog):
@@ -207,12 +211,14 @@ class LoginDialog(QDialog):
 
         try:
             client = self._get_client(url)
+            log.info("Registering user '%s' at %s", username, url)
             result = await client.auth.register(
                 username, password, display_name=display_name
             )
             token = result.token
             user_id = result.user_id
             client.http.token = token
+            log.info("Registration successful, user_id=%d", user_id)
             self._set_status("connected", "success")
             self.client = client
             self.user_id = user_id
@@ -220,6 +226,7 @@ class LoginDialog(QDialog):
             self.accept()
         except Exception as exc:
             msg = str(exc) or f"connection failed ({type(exc).__name__})"
+            log.warning("Registration failed: %s", msg)
             self._set_status(msg, "error")
             self._action_btn.setEnabled(True)
 
@@ -236,6 +243,7 @@ class LoginDialog(QDialog):
 
         try:
             client = self._get_client(url)
+            log.info("Logging in user '%s' at %s", username, url)
 
             if self._mfa_ticket:
                 code = self._mfa_input.text().strip()
@@ -259,6 +267,7 @@ class LoginDialog(QDialog):
 
             token = result.token
             user_id = result.user_id
+            log.info("Login successful, user_id=%d", user_id)
             self._set_status("connected", "success")
             self.client = client
             self.user_id = user_id
@@ -266,5 +275,6 @@ class LoginDialog(QDialog):
             self.accept()
         except Exception as exc:
             msg = str(exc) or f"connection failed ({type(exc).__name__})"
+            log.warning("Login failed: %s", msg)
             self._set_status(msg, "error")
             self._action_btn.setEnabled(True)

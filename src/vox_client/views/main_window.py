@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.base_events
+import logging
 import threading
 
 from PyQt6.QtCore import QSettings, Qt, QTimer
@@ -15,6 +16,8 @@ from vox_sdk.models.users import PresenceResponse
 
 from vox_client.state import AppState
 from vox_client.widgets.ui_helpers import await_dialog
+
+log = logging.getLogger(__name__)
 
 
 def _save_session(url: str, token: str, user_id: int) -> None:
@@ -170,14 +173,18 @@ class MainWindow(QMainWindow):
         """
         saved = _load_session()
         if saved is None:
+            log.debug("No saved session to restore")
             return
         url, token, user_id = saved
+        log.info("Restoring session for user %d at %s", user_id, url)
         try:
             await self._post_login(url, token, user_id)
         except Exception as exc:
             if _is_auth_error(exc):
+                log.warning("Session restore failed (auth error), clearing token")
                 _clear_session()
             else:
+                log.warning("Session restore failed: %s", exc)
                 self._show_restore_failed(url, token, user_id, exc)
 
     def _show_restore_failed(
@@ -285,6 +292,7 @@ class MainWindow(QMainWindow):
 
     async def _post_login(self, url: str, token: str, user_id: int) -> None:
         """Common post-login sequence: set state, connect gateway, load data."""
+        log.info("Connecting to %s as user %d", url, user_id)
         client = Client(url)
         client.http.token = token
 
@@ -333,7 +341,9 @@ class MainWindow(QMainWindow):
             user_id=user_id, status="online",
         )
 
+        log.info("Gateway connected, loading server data")
         await state.load_server_data()
+        log.info("Server data loaded, populating UI")
         self.populate()
 
     @asyncSlot(int)

@@ -327,6 +327,52 @@ class _AppearancePage(QWidget):
 
         self._group.buttonClicked.connect(self._on_flavor_changed)
 
+        layout.addSpacing(8)
+        layout.addWidget(separator())
+        layout.addSpacing(4)
+
+        # -- Logging section --
+        layout.addWidget(section_label("LOGGING"))
+
+        log_row = QHBoxLayout()
+        log_row.setSpacing(8)
+        log_row.addWidget(field_label("Level"))
+        self._log_combo = QComboBox()
+        self._log_combo.setFixedHeight(28)
+        self._log_combo.setFixedWidth(120)
+        combo_style = (
+            f"QComboBox {{ background-color: {c.bg_active}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 4px; padding: 4px 8px; font-size: 12px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background-color: {c.bg_panel}; color: {c.text_primary}; "
+            f"selection-background-color: {c.bg_active}; border: 1px solid {c.border}; }}"
+        )
+        self._log_combo.setStyleSheet(combo_style)
+        for lvl in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            self._log_combo.addItem(lvl)
+        from PyQt6.QtCore import QSettings
+        current = QSettings("Vox", "VoxClient").value("logging/level", "INFO")
+        idx = self._log_combo.findText(current)
+        if idx >= 0:
+            self._log_combo.setCurrentIndex(idx)
+        self._log_combo.currentTextChanged.connect(self._on_log_level_changed)
+        log_row.addWidget(self._log_combo)
+        log_row.addStretch()
+        layout.addLayout(log_row)
+
+        from vox_client.logging_config import get_log_dir
+        log_path = get_log_dir() / "VoxClient.log"
+        path_btn = QPushButton(str(log_path))
+        path_btn.setFlat(True)
+        path_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        path_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.accent}; font-size: 11px; "
+            f"border: none; text-align: left; padding: 2px 0; }}"
+            f"QPushButton:hover {{ text-decoration: underline; }}"
+        )
+        path_btn.clicked.connect(lambda: self._open_log_dir(log_path.parent))
+        layout.addWidget(path_btn)
+
         layout.addStretch()
 
     def _on_flavor_changed(self) -> None:
@@ -337,6 +383,19 @@ class _AppearancePage(QWidget):
                 save_flavor(flavor_id)
                 state.theme_changed.emit()
                 break
+
+    @staticmethod
+    def _on_log_level_changed(level: str) -> None:
+        import logging
+        from PyQt6.QtCore import QSettings
+        QSettings("Vox", "VoxClient").setValue("logging/level", level)
+        logging.getLogger().setLevel(getattr(logging, level, logging.WARNING))
+
+    @staticmethod
+    def _open_log_dir(path: object) -> None:
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 # -- Mic Sensitivity Slider with live level overlay --------------------------

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
@@ -10,13 +12,17 @@ from vox_client.state import AppState
 from vox_client.theme import Theme, load_saved_flavor
 from vox_client.views.main_window import MainWindow
 
+log = logging.getLogger(__name__)
+
 
 def _load_bundled_fonts() -> None:
     """Register bundled TTF fonts with Qt's font database."""
     if not _FONTS_DIR.is_dir():
+        log.debug("Fonts directory not found: %s", _FONTS_DIR)
         return
     for ttf in _FONTS_DIR.glob("*.ttf"):
         QFontDatabase.addApplicationFont(str(ttf))
+    log.debug("Loaded bundled fonts from %s", _FONTS_DIR)
 
 
 class VoxApp:
@@ -26,12 +32,15 @@ class VoxApp:
         self.qt_app = qt_app
         self.main_window: MainWindow | None = None
 
+        log.info("Initializing VoxApp")
+
         # Load bundled fonts before applying theme (so QSS font-family resolves)
         _load_bundled_fonts()
 
         # Theme setup
         state = AppState.instance()
         flavor = load_saved_flavor()
+        log.info("Applying theme flavor: %s", flavor)
         state.theme = Theme(flavor)
         self.qt_app.setStyleSheet(state.theme.generate_qss())
 
@@ -41,6 +50,7 @@ class VoxApp:
     def _on_theme_changed(self) -> None:
         state = AppState.instance()
         if state.theme:
+            log.info("Theme changed to %s", state.theme.flavor)
             self.qt_app.setStyleSheet(state.theme.generate_qss())
 
     # -- window management ---------------------------------------------------
