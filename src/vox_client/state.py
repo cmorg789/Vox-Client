@@ -9,6 +9,7 @@ import sys
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from vox_sdk import Client, GatewayClient
+from vox_sdk.models.emoji import EmojiResponse
 from vox_sdk.models.members import MemberResponse
 from vox_sdk.models.roles import RoleResponse
 from vox_sdk.models.server import FeedInfo, RoomInfo, CategoryInfo, ServerLayoutResponse
@@ -55,6 +56,9 @@ class AppState(QObject):
     voice_media_event = pyqtSignal(str, str)  # (event_type, detail) from media client
     speaking_changed = pyqtSignal(int, bool)  # (user_id, is_speaking)
 
+    # Emoji signals
+    emoji_changed = pyqtSignal()
+
     # UI signals
     layout_loaded = pyqtSignal()
     layout_changed = pyqtSignal()
@@ -84,6 +88,7 @@ class AppState(QObject):
         self._feeds: dict[int, FeedInfo] = {}
         self._rooms: dict[int, RoomInfo] = {}
         self._categories: dict[int, CategoryInfo] = {}
+        self._emoji: dict[int, EmojiResponse] = {}
         self._layout: ServerLayoutResponse | None = None
 
         # Voice state
@@ -163,6 +168,10 @@ class AppState(QObject):
     def get_room_name(self, room_id: int) -> str:
         room = self._rooms.get(room_id)
         return room.name if room else str(room_id)
+
+    def get_custom_emoji(self) -> list[EmojiResponse]:
+        """Return all cached custom server emoji."""
+        return list(self._emoji.values())
 
     def get_voice_members(self, room_id: int) -> dict[int, VoiceMemberData]:
         return self._voice_room_members.get(room_id, {})
@@ -483,7 +492,19 @@ class AppState(QObject):
 
         await asyncio.gather(*[_fetch_voice_members(rid) for rid in self._rooms])
 
+        await self.load_emoji()
+
         self.layout_loaded.emit()
+
+    async def load_emoji(self) -> None:
+        """Fetch custom server emoji and populate cache."""
+        assert self.client is not None
+        try:
+            resp = await self.client.emoji.list_emoji()
+            self._emoji = {e.emoji_id: e for e in resp.items}
+            log.debug("Loaded %d custom emoji", len(self._emoji))
+        except Exception:
+            log.warning("Failed to load custom emoji", exc_info=True)
 
     # -- thread bridge -------------------------------------------------------
 
@@ -745,6 +766,40 @@ class AppState(QObject):
                         ct for ct in self._layout.categories if ct.category_id != cid
                     ]
                 self.layout_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        # -- Emoji gateway events -----------------------------------------------
+
+        @self.gateway.on("emoji_create")
+        async def _on_emoji_create(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                eid = getattr(e, "emoji_id", None)
+                if eid is not None:
+                    self._emoji[eid] = EmojiResponse(
+                        emoji_id=eid,
+                        name=getattr(e, "name", ""),
+                        creator_id=getattr(e, "creator_id", 0),
+                    )
+                self.emoji_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        @self.gateway.on("emoji_update")
+        async def _on_emoji_update(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                eid = getattr(e, "emoji_id", None)
+                if eid is not None and eid in self._emoji:
+                    extra = getattr(e, "extra", {})
+                    self._emoji[eid] = self._emoji[eid].model_copy(update=extra)
+                self.emoji_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        @self.gateway.on("emoji_delete")
+        async def _on_emoji_delete(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                eid = getattr(e, "emoji_id", None)
+                if eid is not None:
+                    self._emoji.pop(eid, None)
+                self.emoji_changed.emit()
             self._run_on_main.emit(_apply)
 
         # -- Voice gateway events -----------------------------------------------
