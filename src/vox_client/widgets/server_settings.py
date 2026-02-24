@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
+    QDialog,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -61,6 +66,487 @@ def _make_scroll_area() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
     lay.setAlignment(Qt.AlignmentFlag.AlignTop)
     scroll.setWidget(container)
     return scroll, container, lay
+
+
+# -- Invites Page ------------------------------------------------------------
+
+class _InviteRow(QWidget):
+    """Single invite row in the scrollable list."""
+
+    deleted = pyqtSignal(str)  # code
+
+    def __init__(self, invite) -> None:  # noqa: ANN001
+        super().__init__()
+        self._code = invite.code
+        self.setFixedHeight(36)
+
+        state = AppState.instance()
+        c = state.theme.colors
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 2, 8, 2)
+        row.setSpacing(10)
+
+        # Invite code (monospace, clickable)
+        self._code_btn = QPushButton(invite.code)
+        self._code_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._code_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.accent}; font-size: 12px; font-family: monospace; "
+            f"border: none; background: transparent; text-align: left; }}"
+            f"QPushButton:hover {{ text-decoration: underline; }}"
+        )
+        self._code_btn.clicked.connect(self._copy_code)
+        row.addWidget(self._code_btn)
+
+        # Creator name
+        creator = state.get_display_name(invite.creator_id)
+        creator_lbl = QLabel(creator)
+        creator_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        row.addWidget(creator_lbl)
+
+        row.addStretch()
+
+        # Uses count
+        max_uses = invite.max_uses if invite.max_uses else "\u221e"
+        uses_lbl = QLabel(f"{invite.uses}/{max_uses} uses")
+        uses_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        row.addWidget(uses_lbl)
+
+        # Expiry
+        if invite.expires_at:
+            now = datetime.now(timezone.utc).timestamp()
+            diff = invite.expires_at - now
+            if diff <= 0:
+                expiry_text = "expired"
+            elif diff < 3600:
+                expiry_text = f"{int(diff / 60)}m left"
+            elif diff < 86400:
+                expiry_text = f"{int(diff / 3600)}h left"
+            else:
+                expiry_text = f"{int(diff / 86400)}d left"
+        else:
+            expiry_text = "never"
+        expiry_lbl = QLabel(expiry_text)
+        expiry_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        expiry_lbl.setFixedWidth(60)
+        row.addWidget(expiry_lbl)
+
+        # Status label
+        self._status = status_label()
+        self._status.setFixedWidth(50)
+        row.addWidget(self._status)
+
+        # Delete button
+        self._del_btn = QPushButton("\u2715")
+        self._del_btn.setFixedSize(22, 22)
+        self._del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._del_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.status_danger}; font-size: 12px; "
+            f"border: 1px solid {c.status_danger}; border-radius: 3px; "
+            f"background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
+        )
+        self._del_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._del_btn)
+
+    def enterEvent(self, event) -> None:  # noqa: ANN001
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(f"background-color: {c.bg_hover}; border-radius: 4px;")
+
+    def leaveEvent(self, event) -> None:  # noqa: ANN001
+        self.setStyleSheet("background: transparent;")
+
+    def _copy_code(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self._code)
+        set_status(self._status, "copied", "success")
+
+    @asyncSlot()
+    async def _on_delete(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._del_btn.setEnabled(False)
+        try:
+            await state.client.invites.delete(self._code)
+            self.deleted.emit(self._code)
+        except Exception as exc:
+            log.error("Failed to delete invite %s: %s", self._code, exc)
+            set_status(self._status, str(exc)[:20], "error")
+        finally:
+            self._del_btn.setEnabled(True)
+
+
+class _InvitesPage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # Top bar: section label + status + create button
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(section_label("INVITES", top_pad=12))
+        top_row.addStretch()
+        self._status = status_label()
+        self._status.setFixedWidth(80)
+        top_row.addWidget(self._status)
+        self._create_btn = action_button("[ + CREATE ]", width=110)
+        self._create_btn.clicked.connect(self._on_create)
+        top_row.addWidget(self._create_btn)
+        layout.addLayout(top_row)
+
+        layout.addSpacing(4)
+
+        # Scroll area for invite rows
+        self._scroll, self._container, self._list_layout = _make_scroll_area()
+        layout.addWidget(self._scroll, stretch=1)
+
+        self._rows: list[_InviteRow] = []
+        self._load_invites()
+
+    @asyncSlot()
+    async def _load_invites(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        try:
+            resp = await state.client.invites.list()
+            for invite in resp.items:
+                self._add_row(invite)
+        except Exception as exc:
+            log.warning("Failed to load invites: %s", exc)
+            set_status(self._status, str(exc)[:30], "error")
+
+    def _add_row(self, invite, prepend: bool = False) -> None:  # noqa: ANN001
+        row = _InviteRow(invite)
+        row.deleted.connect(self._on_row_deleted)
+        if prepend:
+            self._list_layout.insertWidget(0, row)
+            self._rows.insert(0, row)
+        else:
+            self._list_layout.addWidget(row)
+            self._rows.append(row)
+
+    def _on_row_deleted(self, code: str) -> None:
+        for row in self._rows:
+            if row._code == code:
+                row.deleteLater()
+                self._rows.remove(row)
+                break
+
+    @asyncSlot()
+    async def _on_create(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._create_btn.setEnabled(False)
+        set_status(self._status, "creating...", "info")
+        try:
+            invite = await state.client.invites.create()
+            self._add_row(invite, prepend=True)
+            set_status(self._status, "", "info")
+        except Exception as exc:
+            log.error("Failed to create invite: %s", exc)
+            set_status(self._status, str(exc)[:30], "error")
+        finally:
+            self._create_btn.setEnabled(True)
+
+
+# -- Emoji & Stickers Page ---------------------------------------------------
+
+class _AssetRow(QWidget):
+    """Single emoji or sticker row."""
+
+    deleted = pyqtSignal(int)  # asset id
+
+    def __init__(self, asset_id: int, name: str, creator_id: int, asset_type: str) -> None:
+        super().__init__()
+        self.asset_id = asset_id
+        self._asset_type = asset_type
+        self.setFixedHeight(40)
+
+        state = AppState.instance()
+        c = state.theme.colors
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(10)
+
+        # Name (editable)
+        self._name_input = QLineEdit(name)
+        self._name_input.setFixedWidth(160)
+        self._name_input.setStyleSheet(
+            f"background-color: {c.bg_input}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; "
+            f"padding: 2px 8px; font-size: 12px;"
+        )
+        self._name_input.editingFinished.connect(self._on_rename)
+        row.addWidget(self._name_input)
+
+        # Creator name
+        creator = state.get_display_name(creator_id)
+        creator_lbl = QLabel(creator)
+        creator_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 11px; border: none;")
+        row.addWidget(creator_lbl, stretch=1)
+
+        # Status label
+        self._status = status_label()
+        self._status.setFixedWidth(50)
+        row.addWidget(self._status)
+
+        # Delete button
+        self._del_btn = QPushButton("\u2715")
+        self._del_btn.setFixedSize(22, 22)
+        self._del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._del_btn.setStyleSheet(
+            f"QPushButton {{ color: {c.status_danger}; font-size: 12px; "
+            f"border: 1px solid {c.status_danger}; border-radius: 3px; "
+            f"background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.status_danger}; color: {c.text_on_accent}; }}"
+        )
+        self._del_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._del_btn)
+
+    def enterEvent(self, event) -> None:  # noqa: ANN001
+        c = AppState.instance().theme.colors
+        self.setStyleSheet(f"background-color: {c.bg_hover}; border-radius: 4px;")
+
+    def leaveEvent(self, event) -> None:  # noqa: ANN001
+        self.setStyleSheet("background: transparent;")
+
+    @asyncSlot()
+    async def _on_rename(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        new_name = self._name_input.text().strip()
+        if not new_name:
+            return
+        try:
+            if self._asset_type == "emoji":
+                await state.client.emoji.update_emoji(self.asset_id, new_name)
+            else:
+                await state.client.emoji.update_sticker(self.asset_id, new_name)
+            set_status(self._status, "saved", "success")
+        except Exception as exc:
+            log.error("Failed to rename %s %d: %s", self._asset_type, self.asset_id, exc)
+            set_status(self._status, str(exc)[:20], "error")
+
+    @asyncSlot()
+    async def _on_delete(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._del_btn.setEnabled(False)
+        try:
+            if self._asset_type == "emoji":
+                await state.client.emoji.delete_emoji(self.asset_id)
+            else:
+                await state.client.emoji.delete_sticker(self.asset_id)
+            self.deleted.emit(self.asset_id)
+        except Exception as exc:
+            log.error("Failed to delete %s %d: %s", self._asset_type, self.asset_id, exc)
+            set_status(self._status, str(exc)[:20], "error")
+        finally:
+            self._del_btn.setEnabled(True)
+
+
+class _EmojiStickersPage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        c = AppState.instance().theme.colors
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        layout.addWidget(section_label("EMOJI && STICKERS", top_pad=12))
+
+        # Tab row
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(4)
+        self._emoji_tab = QPushButton("Emoji")
+        self._sticker_tab = QPushButton("Stickers")
+        for btn in (self._emoji_tab, self._sticker_tab):
+            btn.setFixedHeight(28)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._emoji_tab.clicked.connect(lambda: self._switch_tab(0))
+        self._sticker_tab.clicked.connect(lambda: self._switch_tab(1))
+        tab_row.addWidget(self._emoji_tab)
+        tab_row.addWidget(self._sticker_tab)
+        tab_row.addStretch()
+        layout.addLayout(tab_row)
+
+        layout.addSpacing(4)
+
+        # Stacked widget for emoji / sticker panels
+        self._stack = QStackedWidget()
+
+        # Emoji panel
+        self._emoji_panel = QWidget()
+        ep_layout = QVBoxLayout(self._emoji_panel)
+        ep_layout.setContentsMargins(0, 0, 0, 0)
+        ep_layout.setSpacing(4)
+        ep_top = QHBoxLayout()
+        self._emoji_status = status_label()
+        self._emoji_status.setFixedWidth(80)
+        ep_top.addWidget(self._emoji_status)
+        ep_top.addStretch()
+        self._emoji_upload_btn = action_button("[ + UPLOAD ]", width=110)
+        self._emoji_upload_btn.clicked.connect(self._on_upload_emoji)
+        ep_top.addWidget(self._emoji_upload_btn)
+        ep_layout.addLayout(ep_top)
+        self._emoji_scroll, self._emoji_container, self._emoji_layout = _make_scroll_area()
+        ep_layout.addWidget(self._emoji_scroll, stretch=1)
+        self._stack.addWidget(self._emoji_panel)
+
+        # Sticker panel
+        self._sticker_panel = QWidget()
+        sp_layout = QVBoxLayout(self._sticker_panel)
+        sp_layout.setContentsMargins(0, 0, 0, 0)
+        sp_layout.setSpacing(4)
+        sp_top = QHBoxLayout()
+        self._sticker_status = status_label()
+        self._sticker_status.setFixedWidth(80)
+        sp_top.addWidget(self._sticker_status)
+        sp_top.addStretch()
+        self._sticker_upload_btn = action_button("[ + UPLOAD ]", width=110)
+        self._sticker_upload_btn.clicked.connect(self._on_upload_sticker)
+        sp_top.addWidget(self._sticker_upload_btn)
+        sp_layout.addLayout(sp_top)
+        self._sticker_scroll, self._sticker_container, self._sticker_layout = _make_scroll_area()
+        sp_layout.addWidget(self._sticker_scroll, stretch=1)
+        self._stack.addWidget(self._sticker_panel)
+
+        layout.addWidget(self._stack, stretch=1)
+
+        self._emoji_rows: list[_AssetRow] = []
+        self._sticker_rows: list[_AssetRow] = []
+
+        self._switch_tab(0)
+        self._load_assets()
+
+    def _switch_tab(self, index: int) -> None:
+        c = AppState.instance().theme.colors
+        self._stack.setCurrentIndex(index)
+        active_style = (
+            f"QPushButton {{ color: {c.text_primary}; font-size: 12px; font-weight: 600; "
+            f"border: none; border-bottom: 2px solid {c.accent}; "
+            f"border-radius: 0; background: transparent; padding: 4px 12px; }}"
+        )
+        inactive_style = (
+            f"QPushButton {{ color: {c.text_dim}; font-size: 12px; "
+            f"border: none; border-radius: 0; background: transparent; padding: 4px 12px; }}"
+            f"QPushButton:hover {{ color: {c.text_secondary}; }}"
+        )
+        self._emoji_tab.setStyleSheet(active_style if index == 0 else inactive_style)
+        self._sticker_tab.setStyleSheet(active_style if index == 1 else inactive_style)
+
+    @asyncSlot()
+    async def _load_assets(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        try:
+            emoji_resp = await state.client.emoji.list_emoji()
+            for e in emoji_resp.items:
+                self._add_emoji_row(e)
+        except Exception as exc:
+            log.warning("Failed to load emoji: %s", exc)
+            set_status(self._emoji_status, str(exc)[:30], "error")
+        try:
+            sticker_resp = await state.client.emoji.list_stickers()
+            for s in sticker_resp.items:
+                self._add_sticker_row(s)
+        except Exception as exc:
+            log.warning("Failed to load stickers: %s", exc)
+            set_status(self._sticker_status, str(exc)[:30], "error")
+
+    def _add_emoji_row(self, emoji, prepend: bool = False) -> None:  # noqa: ANN001
+        row = _AssetRow(emoji.emoji_id, emoji.name, emoji.creator_id, "emoji")
+        row.deleted.connect(self._on_emoji_deleted)
+        if prepend:
+            self._emoji_layout.insertWidget(0, row)
+            self._emoji_rows.insert(0, row)
+        else:
+            self._emoji_layout.addWidget(row)
+            self._emoji_rows.append(row)
+
+    def _add_sticker_row(self, sticker, prepend: bool = False) -> None:  # noqa: ANN001
+        row = _AssetRow(sticker.sticker_id, sticker.name, sticker.creator_id, "sticker")
+        row.deleted.connect(self._on_sticker_deleted)
+        if prepend:
+            self._sticker_layout.insertWidget(0, row)
+            self._sticker_rows.insert(0, row)
+        else:
+            self._sticker_layout.addWidget(row)
+            self._sticker_rows.append(row)
+
+    def _on_emoji_deleted(self, asset_id: int) -> None:
+        for row in self._emoji_rows:
+            if row.asset_id == asset_id:
+                row.deleteLater()
+                self._emoji_rows.remove(row)
+                break
+
+    def _on_sticker_deleted(self, asset_id: int) -> None:
+        for row in self._sticker_rows:
+            if row.asset_id == asset_id:
+                row.deleteLater()
+                self._sticker_rows.remove(row)
+                break
+
+    @asyncSlot()
+    async def _on_upload_emoji(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Emoji Image", "", "Images (*.png *.jpg *.jpeg *.gif *.webp)",
+        )
+        if not path:
+            return
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._emoji_upload_btn.setEnabled(False)
+        set_status(self._emoji_status, "uploading...", "info")
+        try:
+            from pathlib import Path
+            name = Path(path).stem
+            result = await state.client.emoji.create_emoji(name, path)
+            self._add_emoji_row(result, prepend=True)
+            set_status(self._emoji_status, "", "info")
+        except Exception as exc:
+            log.error("Failed to upload emoji: %s", exc)
+            set_status(self._emoji_status, str(exc)[:30], "error")
+        finally:
+            self._emoji_upload_btn.setEnabled(True)
+
+    @asyncSlot()
+    async def _on_upload_sticker(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Sticker Image", "", "Images (*.png *.jpg *.jpeg *.gif *.webp)",
+        )
+        if not path:
+            return
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._sticker_upload_btn.setEnabled(False)
+        set_status(self._sticker_status, "uploading...", "info")
+        try:
+            from pathlib import Path
+            name = Path(path).stem
+            result = await state.client.emoji.create_sticker(name, path)
+            self._add_sticker_row(result, prepend=True)
+            set_status(self._sticker_status, "", "info")
+        except Exception as exc:
+            log.error("Failed to upload sticker: %s", exc)
+            set_status(self._sticker_status, str(exc)[:30], "error")
+        finally:
+            self._sticker_upload_btn.setEnabled(True)
 
 
 # -- Overview Page -----------------------------------------------------------
@@ -556,6 +1042,21 @@ class _MemberRow(QWidget):
         self._ban_btn.clicked.connect(self._on_ban)
         row.addWidget(self._ban_btn)
 
+        # Roles button
+        roles_style = (
+            f"QPushButton {{ color: {c.accent}; font-size: 10px; font-weight: 600; "
+            f"border: 1px solid {c.accent}; border-radius: 3px; padding: 2px 8px; "
+            f"background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.accent}; color: {c.bg_deep}; }}"
+            f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.text_dim}; }}"
+        )
+        self._roles_btn = QPushButton("ROLES")
+        self._roles_btn.setFixedHeight(22)
+        self._roles_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._roles_btn.setStyleSheet(roles_style)
+        self._roles_btn.clicked.connect(self._on_roles)
+        row.addWidget(self._roles_btn)
+
     def enterEvent(self, event) -> None:  # noqa: ANN001
         c = AppState.instance().theme.colors
         self.setStyleSheet(f"background-color: {c.bg_hover}; border-radius: 4px;")
@@ -594,6 +1095,130 @@ class _MemberRow(QWidget):
             set_status(self._status, str(exc)[:20], "error")
         finally:
             self._ban_btn.setEnabled(True)
+
+    def _on_roles(self) -> None:
+        state = AppState.instance()
+        member = state._members.get(self.user_id)
+        if member is None:
+            return
+        popup = _RoleAssignPopup(self.user_id, parent=self.window())
+        popup.exec()
+
+
+class _RoleCheckRow(QWidget):
+    """Single role checkbox row in the assign popup."""
+
+    toggled = pyqtSignal(int, bool)  # role_id, checked
+
+    def __init__(self, role_id: int, name: str, color_int: int | None, checked: bool) -> None:
+        super().__init__()
+        self.role_id = role_id
+        c = AppState.instance().theme.colors
+        hex_color = role_color_for_int(color_int) or c.text_dim
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 2, 8, 2)
+        row.setSpacing(8)
+
+        # Color dot
+        dot = QLabel("\u25cf")
+        dot.setFixedWidth(14)
+        dot.setStyleSheet(f"color: {hex_color}; font-size: 14px; border: none;")
+        row.addWidget(dot)
+
+        # Checkbox
+        self._cb = QCheckBox(name)
+        self._cb.setChecked(checked)
+        self._cb.setStyleSheet(
+            f"QCheckBox {{ color: {c.text_secondary}; font-size: 12px; "
+            f"border: none; spacing: 6px; }}"
+            f"QCheckBox::indicator {{ width: 16px; height: 16px; "
+            f"border: 1px solid {c.border_bright}; border-radius: 3px; "
+            f"background: {c.bg_panel}; }}"
+            f"QCheckBox::indicator:checked {{ background: {c.accent_dim}; "
+            f"border-color: {c.accent}; }}"
+        )
+        self._cb.toggled.connect(lambda state, rid=role_id: self.toggled.emit(rid, state))
+        row.addWidget(self._cb, stretch=1)
+
+    def set_checked(self, checked: bool) -> None:
+        self._cb.blockSignals(True)
+        self._cb.setChecked(checked)
+        self._cb.blockSignals(False)
+
+
+class _RoleAssignPopup(QDialog):
+    """Popup for assigning/revoking roles on a member."""
+
+    def __init__(self, user_id: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._user_id = user_id
+        state = AppState.instance()
+        c = state.theme.colors
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setFixedSize(280, 320)
+        self.setStyleSheet(
+            f"_RoleAssignPopup {{ background-color: {c.bg_panel}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 6px; }}"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        # Title
+        display_name = state.get_display_name(user_id)
+        title = QLabel(f"Roles for {display_name}")
+        title.setStyleSheet(
+            f"color: {c.text_primary}; font-size: 13px; font-weight: 600; border: none;"
+        )
+        layout.addWidget(title)
+
+        layout.addSpacing(4)
+
+        # Scrollable role list
+        scroll, _container, self._roles_layout = _make_scroll_area()
+        layout.addWidget(scroll, stretch=1)
+
+        self._check_rows: list[_RoleCheckRow] = []
+        member = state._members.get(user_id)
+        member_role_ids = member.role_ids if member else []
+
+        roles = sorted(state._roles.values(), key=lambda r: r.position, reverse=True)
+        for role in roles:
+            checked = role.role_id in member_role_ids
+            row = _RoleCheckRow(role.role_id, role.name, role.color, checked)
+            row.toggled.connect(self._on_toggle)
+            self._roles_layout.addWidget(row)
+            self._check_rows.append(row)
+
+    @asyncSlot(int, bool)
+    async def _on_toggle(self, role_id: int, checked: bool) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        # Find the row for potential revert
+        row = next((r for r in self._check_rows if r.role_id == role_id), None)
+        try:
+            if checked:
+                await state.client.roles.assign(self._user_id, role_id)
+                # Update cache
+                member = state._members.get(self._user_id)
+                if member and role_id not in member.role_ids:
+                    member.role_ids.append(role_id)
+            else:
+                await state.client.roles.revoke(self._user_id, role_id)
+                # Update cache
+                member = state._members.get(self._user_id)
+                if member and role_id in member.role_ids:
+                    member.role_ids.remove(role_id)
+        except Exception as exc:
+            log.error("Failed to %s role %d for user %d: %s",
+                      "assign" if checked else "revoke", role_id, self._user_id, exc)
+            # Revert checkbox
+            if row:
+                row.set_checked(not checked)
 
 
 class _BanRow(QWidget):
@@ -847,6 +1472,8 @@ _NAV_ITEMS = [
     ("Overview", "view-carousel.svg"),
     ("Roles", "account-group.svg"),
     ("Members", "account.svg"),
+    ("Invites", "link-variant.svg"),
+    ("Emoji && Stickers", "emoticon-outline.svg"),
     ("Limits", "gauge.svg"),
 ]
 
@@ -861,7 +1488,16 @@ class ServerSettingsDialog(BaseSettingsDialog):
         self._overview_page = _OverviewPage()
         self._roles_page = _RolesPage()
         self._members_page = _MembersPage()
+        self._invites_page = _InvitesPage()
+        self._emoji_stickers_page = _EmojiStickersPage()
         self._limits_page = _LimitsPage()
 
-        for page in (self._overview_page, self._roles_page, self._members_page, self._limits_page):
+        for page in (
+            self._overview_page,
+            self._roles_page,
+            self._members_page,
+            self._invites_page,
+            self._emoji_stickers_page,
+            self._limits_page,
+        ):
             self._add_page(page)
