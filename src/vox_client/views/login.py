@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from qasync import asyncSlot
 
 from vox_sdk import Client
+from vox_sdk.errors import VoxHTTPError
 from vox_sdk.models.auth import MFARequiredResponse
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
@@ -153,6 +154,12 @@ class LoginDialog(QDialog):
             self._client_url = url
         return self._client
 
+    @staticmethod
+    def _friendly_error(exc: Exception) -> str:
+        if isinstance(exc, VoxHTTPError) and exc.error:
+            return exc.error.message
+        return str(exc) or f"connection failed ({type(exc).__name__})"
+
     def _set_status(self, text: str, kind: str = "info") -> None:
         c = AppState.instance().theme.colors
         color_map = {
@@ -225,7 +232,7 @@ class LoginDialog(QDialog):
             self.token = token
             self.accept()
         except Exception as exc:
-            msg = str(exc) or f"connection failed ({type(exc).__name__})"
+            msg = self._friendly_error(exc)
             log.warning("Registration failed: %s", msg)
             self._set_status(msg, "error")
             self._action_btn.setEnabled(True)
@@ -274,7 +281,7 @@ class LoginDialog(QDialog):
             self.token = token
             self.accept()
         except Exception as exc:
-            msg = str(exc) or f"connection failed ({type(exc).__name__})"
+            msg = self._friendly_error(exc)
             log.warning("Login failed: %s", msg)
             self._set_status(msg, "error")
             self._action_btn.setEnabled(True)
