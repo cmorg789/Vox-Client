@@ -30,6 +30,22 @@ try:
         if os.path.isdir(libs_dir):
             for path in glob.glob(os.path.join(libs_dir, "*.dll")):
                 vox_media_binaries.append((path, libs_name))
+    # On Windows, find system-installed dav1d.dll (required by vox_media).
+    # Check DAV1D_DLL env var (set by CI), vcpkg, and common paths.
+    if sys.platform == "win32":
+        import shutil
+        dav1d = os.environ.get("DAV1D_DLL") or shutil.which("dav1d.dll")
+        if not dav1d:
+            # Check vcpkg default location
+            vcpkg_root = os.environ.get("VCPKG_INSTALLATION_ROOT", "")
+            candidate = os.path.join(vcpkg_root, "installed", "x64-windows", "bin", "dav1d.dll")
+            if os.path.isfile(candidate):
+                dav1d = candidate
+        if dav1d and os.path.isfile(dav1d):
+            print(f"vox_media: bundling dav1d.dll from {dav1d}")
+            vox_media_binaries.append((dav1d, "vox_media"))
+        else:
+            warnings.warn("dav1d.dll not found — vox_media audio will fail on Windows!")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:
