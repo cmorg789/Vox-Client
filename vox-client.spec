@@ -7,47 +7,19 @@ import sys
 import warnings
 
 # Collect the native vox_media Rust extension (.so / .pyd / .dylib).
-# collect_dynamic_libs() misses pyo3 extensions that live inside a package,
-# so we locate the native binary by globbing the installed package directory.
+# The hook in hooks/hook-vox_media.py handles delvewheel .libs/ collection
+# on Windows.  Here we just grab the native extension binary itself, since
+# collect_dynamic_libs() misses pyo3 extensions inside a package.
 vox_media_binaries = []
 try:
     import vox_media as _vm
     pkg_dir = os.path.dirname(_vm.__file__)
-    # Look for the native extension: .pyd (Windows), .so (Linux/macOS)
-    # and any companion DLLs the extension depends on (Windows).
-    for pattern in ("*.pyd", "*.so", "*.dll"):
+    for pattern in ("*.pyd", "*.so"):
         for path in glob.glob(os.path.join(pkg_dir, pattern)):
             fname = os.path.basename(path)
-            # Skip __init__ or pure-python files that somehow match
             if fname.startswith("__"):
                 continue
             vox_media_binaries.append((path, "vox_media"))
-    # On Windows, delvewheel places vendored DLLs in a .libs sibling directory
-    # (e.g. site-packages/vox_media.libs/).  Collect those too.
-    site_dir = os.path.dirname(pkg_dir)
-    for libs_name in ("vox_media.libs", ".vox_media.libs"):
-        libs_dir = os.path.join(site_dir, libs_name)
-        if os.path.isdir(libs_dir):
-            for path in glob.glob(os.path.join(libs_dir, "*.dll")):
-                vox_media_binaries.append((path, libs_name))
-    # On Windows, find system-installed dav1d.dll (required by vox_media).
-    # Check DAV1D_DLL env var (set by CI), vcpkg, and common paths.
-    if sys.platform == "win32":
-        import shutil
-        dav1d = os.environ.get("DAV1D_DLL") or shutil.which("dav1d.dll")
-        if not dav1d:
-            # Check vcpkg default location
-            vcpkg_root = os.environ.get("VCPKG_INSTALLATION_ROOT", "")
-            candidate = os.path.join(vcpkg_root, "installed", "x64-windows", "bin", "dav1d.dll")
-            if os.path.isfile(candidate):
-                dav1d = candidate
-        if dav1d and os.path.isfile(dav1d):
-            print(f"vox_media: bundling dav1d.dll from {dav1d}")
-            # Place in "." so it lands in _internal/ (top-level), where the
-            # Windows DLL loader can find it alongside the other DLLs.
-            vox_media_binaries.append((dav1d, "."))
-        else:
-            warnings.warn("dav1d.dll not found — vox_media audio will fail on Windows!")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:
