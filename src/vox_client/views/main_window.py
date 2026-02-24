@@ -47,13 +47,17 @@ def _clear_session() -> None:
 def _is_auth_error(exc: BaseException) -> bool:
     """Return True if *exc* indicates the token is invalid (401/403)."""
     from vox_sdk.errors import VoxHTTPError
+
     return isinstance(exc, VoxHTTPError) and exc.status in (401, 403)
+
+
 from vox_client.widgets.channel_sidebar import ChannelSidebar
 from vox_client.widgets.chat_header import ChatHeader
 from vox_client.widgets.chat_input import ChatInput
 from vox_client.widgets.member_sidebar import MemberSidebar
 from vox_client.widgets.message_list import MessageList
 from vox_client.widgets.server_strip import ServerStrip
+from vox_client.widgets.toast import ToastManager
 from vox_client.widgets.user_panel import UserPanel, VoiceStatusBar
 
 
@@ -138,6 +142,9 @@ class MainWindow(QMainWindow):
         root.addWidget(self._member_sidebar)
 
         self.setCentralWidget(central)
+
+        # -- Toast notifications -----------------------------------------------
+        ToastManager.instance().set_parent(central)
 
         # -- Typing indicator state --------------------------------------------
         self._typers: dict[int, QTimer] = {}  # user_id → expiry timer
@@ -224,9 +231,7 @@ class MainWindow(QMainWindow):
             f"background: transparent; }}"
             f"QPushButton:hover {{ background-color: {c.bg_deep}; color: {c.status_warning}; }}"
         )
-        retry_btn.clicked.connect(
-            lambda: self._retry_restore(url, token, user_id)
-        )
+        retry_btn.clicked.connect(lambda: self._retry_restore(url, token, user_id))
         lay.addWidget(retry_btn)
 
         dismiss_btn = QPushButton("[ DISMISS ]")
@@ -256,6 +261,7 @@ class MainWindow(QMainWindow):
             central = self.centralWidget()
             if central:
                 self._restore_banner.setGeometry(0, 0, central.width(), 32)
+        ToastManager.instance().reposition()
 
     def _dismiss_restore_banner(self) -> None:
         if hasattr(self, "_restore_banner") and self._restore_banner is not None:
@@ -323,6 +329,7 @@ class MainWindow(QMainWindow):
             async def _signal_ready() -> None:
                 await gateway._ready_event.wait()
                 gw_ready.set()
+
             asyncio.create_task(_signal_ready())
             await gateway.run()
 
@@ -339,7 +346,8 @@ class MainWindow(QMainWindow):
         # Set initial presence
         try:
             fut = asyncio.run_coroutine_threadsafe(
-                gateway.update_presence("online"), gw_loop,
+                gateway.update_presence("online"),
+                gw_loop,
             )
             fut.result(timeout=5)
         except Exception:
@@ -348,7 +356,8 @@ class MainWindow(QMainWindow):
         # Seed our own presence so the UI shows "Online" immediately
         # (the server's presence_update echo arrives asynchronously).
         state._presences[user_id] = PresenceResponse(
-            user_id=user_id, status="online",
+            user_id=user_id,
+            status="online",
         )
 
         log.info("Gateway connected, loading server data")
@@ -451,7 +460,8 @@ class MainWindow(QMainWindow):
         if feed_id is not None and gw is not None and gw_loop is not None:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    gw.send_typing(feed_id), gw_loop,
+                    gw.send_typing(feed_id),
+                    gw_loop,
                 )
             except Exception:
                 log.debug("Failed to send typing indicator", exc_info=True)
