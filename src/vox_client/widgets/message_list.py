@@ -89,6 +89,10 @@ class _EditTextEdit(QTextEdit):
         else:
             super().keyPressEvent(event)
 
+    def focusOutEvent(self, event) -> None:  # noqa: ANN001
+        super().focusOutEvent(event)
+        self.cancelled.emit()
+
 
 class _MessageRow(QWidget):
     """A message row that highlights on hover and supports a context menu."""
