@@ -1137,19 +1137,28 @@ class _AboutPage(QWidget):
         from PyQt6.QtCore import PYQT_VERSION_STR
         import vox_client
 
+        from PyQt6.QtWidgets import QGridLayout
+
         info_items = [
             ("Version", vox_client.__version__),
             ("Python", sys.version.split()[0]),
             ("Qt", PYQT_VERSION_STR),
         ]
+        info_grid = QGridLayout()
+        info_grid.setContentsMargins(0, 0, 0, 0)
+        info_grid.setHorizontalSpacing(24)
+        info_grid.setVerticalSpacing(0)
+        col = 0
         for label, value in info_items:
-            layout.addWidget(field_label(label))
+            info_grid.addWidget(field_label(label), 0, col)
             val_lbl = QLabel(value)
             val_lbl.setStyleSheet(
                 f"color: {c.text_secondary}; font-size: 12px; border: none; padding: 2px 0 4px 0;"
             )
             val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            layout.addWidget(val_lbl)
+            info_grid.addWidget(val_lbl, 1, col)
+            col += 1
+        layout.addLayout(info_grid)
 
         layout.addSpacing(4)
         layout.addWidget(separator())
