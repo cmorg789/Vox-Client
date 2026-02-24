@@ -14,13 +14,22 @@ try:
     import vox_media as _vm
     pkg_dir = os.path.dirname(_vm.__file__)
     # Look for the native extension: .pyd (Windows), .so (Linux/macOS)
-    for pattern in ("*.pyd", "*.so"):
+    # and any companion DLLs the extension depends on (Windows).
+    for pattern in ("*.pyd", "*.so", "*.dll"):
         for path in glob.glob(os.path.join(pkg_dir, pattern)):
             fname = os.path.basename(path)
             # Skip __init__ or pure-python files that somehow match
             if fname.startswith("__"):
                 continue
             vox_media_binaries.append((path, "vox_media"))
+    # On Windows, delvewheel places vendored DLLs in a .libs sibling directory
+    # (e.g. site-packages/vox_media.libs/).  Collect those too.
+    site_dir = os.path.dirname(pkg_dir)
+    for libs_name in ("vox_media.libs", ".vox_media.libs"):
+        libs_dir = os.path.join(site_dir, libs_name)
+        if os.path.isdir(libs_dir):
+            for path in glob.glob(os.path.join(libs_dir, "*.dll")):
+                vox_media_binaries.append((path, libs_name))
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:

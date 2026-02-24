@@ -86,6 +86,18 @@ jobs:
             ls -la dist/vox-client/_internal/vox_media/ 2>/dev/null || echo "  (directory missing)"
             exit 1
           fi
+          # On Windows, verify vendored DLLs are present (delvewheel .libs dir)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            for d in dist/vox-client/_internal/vox_media.libs dist/vox-client/_internal/.vox_media.libs; do
+              if [ -d "$d" ]; then
+                echo "✓ Vendored DLL directory found: $d"
+                ls -la "$d"
+              fi
+            done
+            # Also check for DLLs alongside the .pyd
+            echo "DLLs in vox_media/:"
+            ls dist/vox-client/_internal/vox_media/*.dll 2>/dev/null || echo "  (none)"
+          fi
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
