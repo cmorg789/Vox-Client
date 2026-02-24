@@ -101,12 +101,19 @@ jobs:
 
       - name: List DLL dependencies (Windows)
         if: runner.os == 'Windows'
-        shell: cmd
+        shell: pwsh
         run: |
-          for %%f in (dist\vox-client\_internal\vox_media\*.pyd) do (
-            echo === Dependencies of %%f ===
-            dumpbin /dependents "%%f"
-          )
+          Get-ChildItem dist\vox-client\_internal\vox_media\*.pyd | ForEach-Object {
+            Write-Host "=== Dependencies of $($_.Name) ==="
+            & .venv\Scripts\python -c "import pefile; pe = pefile.PE(r'$($_.FullName)'); [print(e.dll.decode()) for e in pe.DIRECTORY_ENTRY_IMPORT]"
+          }
+          Write-Host "`n=== All DLLs in _internal/ ==="
+          Get-ChildItem dist\vox-client\_internal\*.dll -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
+          Write-Host "`n=== All files in vox_media/ ==="
+          Get-ChildItem dist\vox-client\_internal\vox_media\ -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
+          Write-Host "`n=== vox_media.libs/ ==="
+          Get-ChildItem dist\vox-client\_internal\vox_media.libs\ -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
+          if (-not (Test-Path dist\vox-client\_internal\vox_media.libs)) { Write-Host "(not found)" }
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
