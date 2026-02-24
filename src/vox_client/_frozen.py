@@ -16,3 +16,4 @@ def _base_dir() -> Path:
 RESOURCES_DIR = _base_dir() / "resources"
 ICONS_DIR = RESOURCES_DIR / "icons"
 FONTS_DIR = RESOURCES_DIR / "fonts"
+EMOJI_JSON = RESOURCES_DIR / "emoji.json"
