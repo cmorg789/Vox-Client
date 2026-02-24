@@ -19,9 +19,11 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMenu,
+    QMessageBox,
+    QTextEdit,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -34,6 +36,8 @@ from vox_client.widgets.ui_helpers import clear_layout
 
 _CODE_RE = re.compile(r"`([^`]+)`")
 _MENTION_RE = re.compile(r"@(\w+)")
+_LONG_WORD_RE = re.compile(r"\S{20,}")
+_SENTINEL: object = object()  # default marker for _add_message kwargs
 
 
 def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, mention_bg: str) -> str:
@@ -44,6 +48,8 @@ def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, m
     import html
 
     text = html.escape(body)
+    # Insert zero-width spaces in long unbroken runs so QLabel can wrap them
+    text = _LONG_WORD_RE.sub(lambda m: "\u200b".join(m.group()), text)
     # Inline code
     text = _CODE_RE.sub(
         rf'<span style="background-color: {code_bg}; color: {code_color}; '
@@ -59,14 +65,27 @@ def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, m
     return text
 
 
-class _EditLineEdit(QLineEdit):
-    """Line edit that emits ``cancelled`` when Escape is pressed."""
+class _EditTextEdit(QTextEdit):
+    """Text editor that emits signals for Enter (submit) and Escape (cancel).
+
+    Shift+Enter inserts a newline; bare Enter submits.
+    Accepts only plain text and auto-sizes to fit content.
+    """
 
     cancelled = pyqtSignal()
+    submitted = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptRichText(False)
 
     def keyPressEvent(self, event) -> None:  # noqa: ANN001
         if event.key() == Qt.Key.Key_Escape:
             self.cancelled.emit()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
+            self.submitted.emit()
         else:
             super().keyPressEvent(event)
 
@@ -83,6 +102,7 @@ class _MessageRow(QWidget):
         self._hover_color = hover_color
         self._default_style = "background-color: transparent;"
         self.setStyleSheet(self._default_style)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._message_list = message_list
         self.msg_id: int | None = None
         self.author_id: int | None = None
@@ -107,6 +127,7 @@ class MessageList(QScrollArea):
     def __init__(self) -> None:
         super().__init__()
         self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         state = AppState.instance()
         c = state.theme.colors
@@ -114,6 +135,7 @@ class MessageList(QScrollArea):
         self.setStyleSheet(f"background-color: {c.bg_main};")
 
         self._container = QWidget()
+        self._container.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Maximum)
         self._layout = QVBoxLayout(self._container)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._layout.setContentsMargins(0, 4, 0, 4)
@@ -234,18 +256,44 @@ class MessageList(QScrollArea):
         body: str | None,
         *,
         msg_id: int | None = None,
-    ) -> None:
+        insert_idx: int | None = None,
+        prev_author: int | None = _SENTINEL,
+        prev_date: str | None = _SENTINEL,
+    ) -> tuple[int | None, int | None, str | None]:
+        """Add a message to the layout.
+
+        When *insert_idx* is ``None`` (default), appends to the end using
+        ``self._last_author`` / ``self._last_date`` for grouping.  When an
+        integer, inserts at that position using the caller-provided
+        *prev_author* / *prev_date* instead.
+
+        Returns ``(new_insert_idx, prev_author, prev_date)`` so callers
+        that insert in a loop can track state.  For append mode the first
+        element is always ``None``.
+        """
         state = AppState.instance()
         c = state.theme.colors
+
+        prepend = insert_idx is not None
+        cur_author = prev_author if prepend else self._last_author
+        cur_date = prev_date if prepend else self._last_date
 
         dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc) if timestamp else None
         time_str = dt.strftime("%H:%M") if dt else ""
         date_str = dt.strftime(_DATE_FMT) if dt else None
 
+        def _place(widget: QWidget) -> None:
+            nonlocal insert_idx
+            if prepend:
+                self._layout.insertWidget(insert_idx, widget)
+                insert_idx += 1
+            else:
+                self._layout.addWidget(widget)
+
         # Date divider
-        if date_str and date_str != self._last_date:
-            self._last_date = date_str
-            self._layout.addWidget(self._make_date_divider(date_str))
+        if date_str and date_str != cur_date:
+            cur_date = date_str
+            _place(self._make_date_divider(date_str))
 
         # System messages (no author)
         if author_id is None:
@@ -256,16 +304,19 @@ class MessageList(QScrollArea):
                 f"color: {c.text_dim}; font-style: italic; padding: 4px 16px; font-size: 12px;"
             )
             sys_msg.setTextFormat(Qt.TextFormat.PlainText)
-            self._layout.addWidget(sys_msg)
-            self._last_author = None
-            return
+            _place(sys_msg)
+            cur_author = None
+            if not prepend:
+                self._last_author = None
+                self._last_date = cur_date
+            return (insert_idx, cur_author, cur_date)
 
         # Collect row widgets for this message (for deletion tracking)
         row_widgets: list[QWidget] = []
 
         # Author header (grouped – skip if same author)
-        show_header = author_id != self._last_author
-        self._last_author = author_id
+        show_header = author_id != cur_author
+        cur_author = author_id
 
         if show_header:
             header_row = _MessageRow(c.bg_hover, message_list=self)
@@ -292,7 +343,7 @@ class MessageList(QScrollArea):
             header_layout.addWidget(author_label)
             header_layout.addStretch()
 
-            self._layout.addWidget(header_row)
+            _place(header_row)
             row_widgets.append(header_row)
 
         # Message body
@@ -312,11 +363,12 @@ class MessageList(QScrollArea):
         rendered = _render_body(msg_text, c.accent_bright, c.status_success, c.bg_input, c.mention_bg)
         body_label = QLabel(rendered)
         body_label.setWordWrap(True)
+        body_label.setMinimumWidth(1)
         body_label.setStyleSheet(f"color: {c.text_primary}; font-size: 13px;")
         body_label.setTextFormat(Qt.TextFormat.RichText)
         msg_layout.addWidget(body_label, stretch=1)
 
-        self._layout.addWidget(msg_row)
+        _place(msg_row)
         row_widgets.append(msg_row)
 
         # Track by msg_id for edit/delete
@@ -325,6 +377,12 @@ class MessageList(QScrollArea):
             self._msg_rows[msg_id] = row_widgets
             self._msg_bodies[msg_id] = msg_text
             self._msg_authors[msg_id] = author_id
+
+        if not prepend:
+            self._last_author = author_id
+            self._last_date = cur_date
+
+        return (insert_idx, cur_author, cur_date)
 
     def _scroll_to_bottom(self) -> None:
         QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
@@ -385,6 +443,8 @@ class MessageList(QScrollArea):
             self._msg_widgets.pop(msg_id, None)
             self._msg_bodies.pop(msg_id, None)
             self._msg_authors.pop(msg_id, None)
+            if msg_id == self._editing_msg_id:
+                self._editing_msg_id = None
         except Exception:
             log.error("Error handling message_deleted event", exc_info=True)
 
@@ -458,19 +518,39 @@ class MessageList(QScrollArea):
         body_label.hide()
         self._editing_msg_id = msg_id
 
-        edit_input = _EditLineEdit(raw_body)
+        edit_input = _EditTextEdit()
         edit_input.setObjectName("InlineEdit")
+        edit_input.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         edit_input.setStyleSheet(
             f"background-color: {c.bg_input}; color: {c.text_primary}; "
             f"border: 1px solid {c.accent_dim}; border-radius: 3px; "
             f"padding: 4px 6px; font-size: 13px;"
         )
-        row_layout.addWidget(edit_input, stretch=1)
+        edit_input.setPlainText(raw_body)
+        row_layout.insertWidget(row_layout.indexOf(body_label), edit_input, stretch=1)
+
+        # Constrain the row to shrink-wrap the edit input
+        msg_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+        # Auto-size after insertion so word-wrap is calculated at the real width
+        def _resize_edit() -> None:
+            doc = edit_input.document()
+            doc.setTextWidth(edit_input.viewport().width())
+            doc_h = doc.size().height()
+            margins = edit_input.contentsMargins()
+            h = int(doc_h) + margins.top() + margins.bottom() + 2
+            h = min(max(h, 32), 160)
+            edit_input.setFixedHeight(h)
+            msg_row.setFixedHeight(h + 4)
+
+        QTimer.singleShot(0, _resize_edit)
+        edit_input.document().contentsChanged.connect(_resize_edit)
+
         edit_input.setFocus()
         edit_input.selectAll()
 
-        edit_input.returnPressed.connect(
-            lambda: self._finish_edit(msg_id, edit_input.text()),
+        edit_input.submitted.connect(
+            lambda: self._finish_edit(msg_id, edit_input.toPlainText()),
         )
         edit_input.cancelled.connect(self._cancel_edit)
 
@@ -487,7 +567,9 @@ class MessageList(QScrollArea):
 
             msg_row = body_label.parent()
             if msg_row is not None:
-                edit_input = msg_row.findChild(_EditLineEdit, "InlineEdit")
+                msg_row.setFixedHeight(16777215)  # QWIDGETSIZE_MAX — remove constraint
+                msg_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                edit_input = msg_row.findChild(_EditTextEdit, "InlineEdit")
                 if edit_input is not None:
                     edit_input.deleteLater()
 
@@ -504,18 +586,20 @@ class MessageList(QScrollArea):
             self._cancel_edit()
             return
 
-        # Remove the edit widget immediately
+        # Remove the edit widget and restore row layout immediately
         self._editing_msg_id = None
         body_label = self._msg_widgets.get(msg_id)
         if body_label is not None and not sip.isdeleted(body_label):
             msg_row = body_label.parent()
             if msg_row is not None:
-                edit_input = msg_row.findChild(_EditLineEdit, "InlineEdit")
+                msg_row.setFixedHeight(16777215)
+                msg_row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                edit_input = msg_row.findChild(_EditTextEdit, "InlineEdit")
                 if edit_input is not None:
                     edit_input.deleteLater()
 
         try:
-            await state.client.messages.update(msg_id, body=new_text)
+            await state.client.messages.edit(self._current_feed_id, msg_id, new_text)
             # The gateway message_update event will refresh the label, but
             # update locally immediately for responsiveness.
             self._msg_bodies[msg_id] = new_text
@@ -537,12 +621,22 @@ class MessageList(QScrollArea):
 
     @asyncSlot()
     async def _delete_message(self, msg_id: int) -> None:
-        """Delete a message via the SDK."""
+        """Delete a message via the SDK after user confirmation."""
+        reply = QMessageBox.question(
+            self,
+            "Delete Message",
+            "Are you sure you want to delete this message?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         state = AppState.instance()
         if state.client is None:
             return
         try:
-            await state.client.messages.delete(msg_id)
+            await state.client.messages.delete(self._current_feed_id, msg_id)
             # The gateway message_delete event will remove the widgets.
         except Exception:
             log.error("Failed to delete message %d", msg_id, exc_info=True)
@@ -602,106 +696,43 @@ class MessageList(QScrollArea):
         insert_idx = 0
         prev_author: int | None = None
         prev_date: str | None = None
-        c = state.theme.colors
 
         for msg in reversed(result.messages):
-            dt = (
-                datetime.fromtimestamp(msg.timestamp / 1000, tz=timezone.utc)
-                if msg.timestamp
-                else None
+            insert_idx, prev_author, prev_date = self._add_message(
+                msg.author_id,
+                msg.timestamp,
+                msg.body,
+                msg_id=msg.msg_id,
+                insert_idx=insert_idx,
+                prev_author=prev_author,
+                prev_date=prev_date,
             )
-            time_str = dt.strftime("%H:%M") if dt else ""
-            date_str = dt.strftime(_DATE_FMT) if dt else None
 
-            # Date divider
-            if date_str and date_str != prev_date:
-                prev_date = date_str
-                divider = self._make_date_divider(date_str)
-                self._layout.insertWidget(insert_idx, divider)
-                insert_idx += 1
-
-            # System messages
-            if msg.author_id is None:
-                sys_msg = QLabel(f"\u2500\u2500 {msg.body or ''} \u2500\u2500")
-                sys_msg.setWordWrap(True)
-                sys_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                sys_msg.setStyleSheet(
-                    f"color: {c.text_dim}; font-style: italic; "
-                    f"padding: 4px 16px; font-size: 12px;"
-                )
-                sys_msg.setTextFormat(Qt.TextFormat.PlainText)
-                self._layout.insertWidget(insert_idx, sys_msg)
-                insert_idx += 1
-                prev_author = None
-                continue
-
-            row_widgets: list[QWidget] = []
-
-            # Author header (grouped within this batch)
-            show_header = msg.author_id != prev_author
-            prev_author = msg.author_id
-
-            if show_header:
-                header_row = _MessageRow(c.bg_hover, message_list=self)
-                header_row.msg_id = msg.msg_id
-                header_row.author_id = msg.author_id
-                header_layout = QHBoxLayout(header_row)
-                header_layout.setContentsMargins(16, 10, 16, 0)
-                header_layout.setSpacing(8)
-
-                ts_label = QLabel(time_str)
-                ts_label.setFixedWidth(48)
-                ts_label.setStyleSheet(f"color: {c.text_dim}; font-size: 11px;")
-                ts_label.setAlignment(
-                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                )
-                header_layout.addWidget(ts_label)
-
-                author_name = state.get_display_name(msg.author_id)
-                role_color = state.get_role_color(msg.author_id) or c.accent
-                author_label = QLabel(author_name)
-                author_label.setStyleSheet(
-                    f"color: {role_color}; font-weight: 600; font-size: 13px;"
-                )
-                header_layout.addWidget(author_label)
-                header_layout.addStretch()
-
-                self._layout.insertWidget(insert_idx, header_row)
-                insert_idx += 1
-                row_widgets.append(header_row)
-
-            # Body row
-            msg_text = msg.body or ""
-            msg_row = _MessageRow(c.bg_hover, message_list=self)
-            msg_row.msg_id = msg.msg_id
-            msg_row.author_id = msg.author_id
-            body_layout = QHBoxLayout(msg_row)
-            body_layout.setContentsMargins(16, 1, 16, 1)
-            body_layout.setSpacing(8)
-
-            spacer = QLabel()
-            spacer.setFixedWidth(48)
-            body_layout.addWidget(spacer)
-
-            rendered = _render_body(
-                msg_text, c.accent_bright, c.status_success, c.bg_input, c.mention_bg,
-            )
-            body_label = QLabel(rendered)
-            body_label.setWordWrap(True)
-            body_label.setStyleSheet(f"color: {c.text_primary}; font-size: 13px;")
-            body_label.setTextFormat(Qt.TextFormat.RichText)
-            body_layout.addWidget(body_label, stretch=1)
-
-            self._layout.insertWidget(insert_idx, msg_row)
-            insert_idx += 1
-            row_widgets.append(msg_row)
-
-            # Track
-            if msg.msg_id is not None:
-                self._msg_widgets[msg.msg_id] = body_label
-                self._msg_rows[msg.msg_id] = row_widgets
-                self._msg_bodies[msg.msg_id] = msg_text
-                self._msg_authors[msg.msg_id] = msg.author_id
+        # Fix duplicate author header at the pagination boundary:
+        # If the last prepended message has the same author as the first
+        # existing message, the existing message's header is now redundant.
+        if prev_author is not None and insert_idx is not None:
+            # The widget right after the prepended block is at index insert_idx
+            if insert_idx < self._layout.count():
+                boundary_item = self._layout.itemAt(insert_idx)
+                if boundary_item is not None:
+                    boundary_widget = boundary_item.widget()
+                    if (
+                        isinstance(boundary_widget, _MessageRow)
+                        and boundary_widget.author_id == prev_author
+                        and boundary_widget.msg_id is not None
+                    ):
+                        # This is a header row for the same author — check if
+                        # it's actually a header (has author label, not a body row).
+                        # Header rows have contentsMargins top=10; body rows top=1.
+                        wl = boundary_widget.layout()
+                        if wl is not None and wl.contentsMargins().top() == 10:
+                            self._layout.removeWidget(boundary_widget)
+                            boundary_widget.deleteLater()
+                            # Also remove from _msg_rows tracking
+                            mid = boundary_widget.msg_id
+                            if mid in self._msg_rows and boundary_widget in self._msg_rows[mid]:
+                                self._msg_rows[mid].remove(boundary_widget)
 
         # Restore scroll position so the viewport stays on the same content
         def _restore_scroll() -> None:
