@@ -88,6 +88,21 @@ jobs:
         if: runner.os == 'Windows'
         run: .venv\Scripts\python -m PyInstaller vox-client.spec --noconfirm
 
+      - name: Ensure dav1d.dll in bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $target = "dist\vox-client\_internal\dav1d.dll"
+          if (Test-Path $target) {
+            Write-Host "dav1d.dll already in bundle (placed by PyInstaller)"
+          } elseif ($env:DAV1D_DLL -and (Test-Path $env:DAV1D_DLL)) {
+            Copy-Item $env:DAV1D_DLL $target
+            Write-Host "Copied dav1d.dll from $env:DAV1D_DLL to bundle"
+          } else {
+            Write-Host "::error::dav1d.dll not available to bundle"
+            exit 1
+          }
+
       - name: Verify native extension bundled
         shell: bash
         run: |

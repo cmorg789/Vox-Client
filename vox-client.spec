@@ -43,7 +43,9 @@ try:
                 dav1d = candidate
         if dav1d and os.path.isfile(dav1d):
             print(f"vox_media: bundling dav1d.dll from {dav1d}")
-            vox_media_binaries.append((dav1d, "vox_media"))
+            # Place in "." so it lands in _internal/ (top-level), where the
+            # Windows DLL loader can find it alongside the other DLLs.
+            vox_media_binaries.append((dav1d, "."))
         else:
             warnings.warn("dav1d.dll not found — vox_media audio will fail on Windows!")
     if vox_media_binaries:
