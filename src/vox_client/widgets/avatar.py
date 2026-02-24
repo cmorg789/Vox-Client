@@ -42,21 +42,23 @@ class AvatarWidget(QLabel):
         self._size = size
         self._user_id = user_id
         self._has_image = False
+        self._speaking = False
 
         state = AppState.instance()
         c = state.theme.colors
         name = state.get_display_name(user_id)
-        role_color = state.get_role_color(user_id) or c.accent_dim
+        self._role_color = state.get_role_color(user_id) or c.accent_dim
+        self._text_color = c.text_primary
 
         self.setFixedSize(size, size)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         radius = size // 2
         font_size = max(size * 2 // 3, 9)
-        self.setStyleSheet(
-            f"background-color: {role_color}; color: {c.text_primary}; "
+        self._base_style = (
             f"border-radius: {radius}px; font-size: {font_size}px; font-weight: 900;"
         )
+        self._update_stylesheet()
         self.setText(name[0].upper() if name else "?")
 
         # Kick off async image load if the member has an avatar URL
@@ -65,6 +67,27 @@ class AvatarWidget(QLabel):
             nam = _shared_nam()
             reply = nam.get(QNetworkRequest(QUrl(member.avatar)))
             reply.finished.connect(lambda r=reply: self._on_reply(r))
+
+    def set_speaking(self, speaking: bool) -> None:
+        if self._speaking == speaking:
+            return
+        self._speaking = speaking
+        self._update_stylesheet()
+
+    def _update_stylesheet(self) -> None:
+        state = AppState.instance()
+        c = state.theme.colors
+        border = f"border: 2px solid {c.status_success};" if self._speaking else "border: none;"
+        if self._has_image:
+            # Image mode: no background, just border
+            radius = self._size // 2
+            self.setStyleSheet(f"border-radius: {radius}px; {border}")
+        else:
+            # Letter mode: keep background + text color
+            self.setStyleSheet(
+                f"background-color: {self._role_color}; color: {self._text_color}; "
+                f"{self._base_style} {border}"
+            )
 
     def _on_reply(self, reply: QNetworkReply) -> None:
         if reply.error() != QNetworkReply.NetworkError.NoError:
@@ -109,5 +132,5 @@ class AvatarWidget(QLabel):
         result.setDevicePixelRatio(2)
         self.setPixmap(result)
         self.setText("")
-        self.setStyleSheet("")  # clear background so the pixmap shows cleanly
         self._has_image = True
+        self._update_stylesheet()

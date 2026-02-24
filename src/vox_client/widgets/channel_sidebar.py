@@ -813,7 +813,12 @@ class _VoiceMemberEntry(QWidget):
         layout.setSpacing(4)
 
         # Avatar circle (async-loads image if available)
-        layout.addWidget(AvatarWidget(user_id, size=16, parent=self))
+        self._avatar = AvatarWidget(user_id, size=16, parent=self)
+        self._avatar.set_speaking(state.is_speaking(user_id))
+        layout.addWidget(self._avatar)
+
+        # Listen for speaking state changes
+        state.speaking_changed.connect(self._on_speaking_changed)
 
         name = state.get_display_name(user_id)
         name_label = QLabel(name)
@@ -841,6 +846,10 @@ class _VoiceMemberEntry(QWidget):
             )
             mute_icon.setFixedSize(10, 10)
             layout.addWidget(mute_icon)
+
+    def _on_speaking_changed(self, user_id: int, speaking: bool) -> None:
+        if user_id == self.user_id:
+            self._avatar.set_speaking(speaking)
 
     def contextMenuEvent(self, event) -> None:  # noqa: ANN001
         state = AppState.instance()

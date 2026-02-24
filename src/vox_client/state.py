@@ -53,6 +53,7 @@ class AppState(QObject):
     voice_state_changed = pyqtSignal()       # join/leave/members updated
     voice_connection_error = pyqtSignal(str)  # join failure message
     voice_media_event = pyqtSignal(str, str)  # (event_type, detail) from media client
+    speaking_changed = pyqtSignal(int, bool)  # (user_id, is_speaking)
 
     # UI signals
     layout_loaded = pyqtSignal()
@@ -94,6 +95,7 @@ class AppState(QObject):
         self.voice_self_mute: bool = False
         self.voice_self_deaf: bool = False
         self._user_volumes: dict[int, float] = {}  # user_id → log volume (session-local)
+        self._speaking_users: set[int] = set()  # user_ids currently speaking
         self._media_poll_timer: QTimer | None = None
 
         # Connect the thread bridge so callables are executed on the main thread
@@ -164,6 +166,9 @@ class AppState(QObject):
 
     def get_voice_members(self, room_id: int) -> dict[int, VoiceMemberData]:
         return self._voice_room_members.get(room_id, {})
+
+    def is_speaking(self, user_id: int) -> bool:
+        return user_id in self._speaking_users
 
     # -- voice ---------------------------------------------------------------
 
@@ -305,6 +310,10 @@ class AppState(QObject):
             except Exception:
                 log.warning("Error sending voice leave for room %d", room_id, exc_info=True)
         self.voice_room_id = None
+        # Clear speaking state for all users
+        for uid in list(self._speaking_users):
+            self._speaking_users.discard(uid)
+            self.speaking_changed.emit(uid, False)
         self.voice_state_changed.emit()
 
     def _start_media_poll(self) -> None:
@@ -350,6 +359,22 @@ class AppState(QObject):
                     self.voice_connection_error.emit(f"Audio error: {detail}")
                 elif event_type == "video_error":
                     log.error("Video error: %s", detail)
+                elif event_type == "speaking_start":
+                    try:
+                        uid = int(detail)
+                        if uid not in self._speaking_users:
+                            self._speaking_users.add(uid)
+                            self.speaking_changed.emit(uid, True)
+                    except ValueError:
+                        pass
+                elif event_type == "speaking_stop":
+                    try:
+                        uid = int(detail)
+                        if uid in self._speaking_users:
+                            self._speaking_users.discard(uid)
+                            self.speaking_changed.emit(uid, False)
+                    except ValueError:
+                        pass
         except Exception:
             log.error("Error polling media events", exc_info=True)
 

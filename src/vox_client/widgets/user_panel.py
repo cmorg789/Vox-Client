@@ -236,6 +236,9 @@ class UserPanel(QFrame):
         # Start on logged-out page
         self._stack.setCurrentIndex(0)
 
+        # Speaking indicator on avatar
+        state.speaking_changed.connect(self._on_speaking_changed)
+
     def restyle(self) -> None:
         """Re-apply inline styles after a theme change."""
         c = AppState.instance().theme.colors
@@ -321,6 +324,11 @@ class UserPanel(QFrame):
                 }
                 status_text = status_map.get(raw, raw.capitalize() if raw else "Online")
         self._status_label.setText(status_text)
+
+    def _on_speaking_changed(self, user_id: int, speaking: bool) -> None:
+        state = AppState.instance()
+        if user_id == state.user_id and isinstance(self._avatar, AvatarWidget):
+            self._avatar.set_speaking(speaking)
 
     def _toggle_mute(self) -> None:
         self._muted = not self._muted
