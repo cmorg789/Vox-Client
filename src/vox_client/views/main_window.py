@@ -242,10 +242,20 @@ class MainWindow(QMainWindow):
 
         self._restore_banner = banner
 
-        # Insert at top of central widget's layout
+        # Overlay on top of the central widget (don't insert into the layout)
         central = self.centralWidget()
-        if central and central.layout():
-            central.layout().insertWidget(0, banner)
+        if central:
+            banner.setParent(central)
+            banner.raise_()
+            banner.setGeometry(0, 0, central.width(), 32)
+            banner.show()
+
+    def resizeEvent(self, event: object) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_restore_banner") and self._restore_banner is not None:
+            central = self.centralWidget()
+            if central:
+                self._restore_banner.setGeometry(0, 0, central.width(), 32)
 
     def _dismiss_restore_banner(self) -> None:
         if hasattr(self, "_restore_banner") and self._restore_banner is not None:
