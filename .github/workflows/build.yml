@@ -99,6 +99,15 @@ jobs:
             ls dist/vox-client/_internal/vox_media/*.dll 2>/dev/null || echo "  (none)"
           fi
 
+      - name: List DLL dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for %%f in (dist\vox-client\_internal\vox_media\*.pyd) do (
+            echo === Dependencies of %%f ===
+            dumpbin /dependents "%%f"
+          )
+
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
