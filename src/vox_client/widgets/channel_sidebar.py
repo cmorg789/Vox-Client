@@ -203,6 +203,7 @@ class _CreateSpaceDialog(QDialog):
 
         # Name input
         self._name_input = dialog_input("channel-name")
+        self._name_input.returnPressed.connect(self._on_create)
         layout.addWidget(self._name_input)
 
         # Status label
@@ -297,6 +298,7 @@ class _RenameDialog(QDialog):
         self._name_input = dialog_input("")
         self._name_input.setText(current_name)
         self._name_input.selectAll()
+        self._name_input.returnPressed.connect(self._on_save)
         layout.addWidget(self._name_input)
 
         self._status = dialog_status_label()
@@ -406,6 +408,7 @@ class _CreateCategoryDialog(QDialog):
         layout.addLayout(title_row)
 
         self._name_input = dialog_input("Category name")
+        self._name_input.returnPressed.connect(self._on_create)
         layout.addWidget(self._name_input)
 
         self._status = dialog_status_label()
@@ -756,6 +759,8 @@ class _ChannelItem(QWidget):
         )
 
         rename_act = menu.addAction("Rename")
+        settings_act = menu.addAction("Settings")
+        settings_act.setIcon(tinted_icon(_ICONS_DIR / "cog.svg", c.text_secondary, size=14))
         menu.addSeparator()
         delete_act = menu.addAction("Delete")
         delete_act.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.status_danger, size=14))
@@ -765,6 +770,10 @@ class _ChannelItem(QWidget):
             return
         if action is rename_act:
             dlg = _RenameDialog(self.item_type, self.feed_id, self._name, parent=self.window())
+            dlg.exec()
+        elif action is settings_act:
+            from vox_client.widgets.channel_settings import ChannelSettingsDialog
+            dlg = ChannelSettingsDialog(self.item_type, self.feed_id, parent=self.window())
             dlg.exec()
         elif action is delete_act:
             self._delete_channel()
