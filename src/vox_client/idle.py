@@ -43,8 +43,8 @@ class IdleManager(QObject):
         self._timer.setInterval(_CHECK_INTERVAL_MS)
         self._timer.timeout.connect(self._check_idle)
 
-        # Reset activity when voice state changes (user is active if in voice)
-        self._state.voice_state_changed.connect(self._on_voice_activity)
+        # Reset activity when the local user is speaking (RMS-based detection)
+        self._state.speaking_changed.connect(self._on_speaking_changed)
 
     def start(self) -> None:
         """Install the event filter and start the idle check timer."""
@@ -136,9 +136,9 @@ class IdleManager(QObject):
         except Exception:
             log.debug("Failed to update presence to %s", status, exc_info=True)
 
-    def _on_voice_activity(self) -> None:
-        """Reset activity timer when voice state changes (join/leave)."""
-        if self._state.voice_room_id is not None:
+    def _on_speaking_changed(self, user_id: int, is_speaking: bool) -> None:
+        """Reset activity when the local user starts speaking."""
+        if is_speaking and user_id == self._state.user_id:
             self._last_activity = time.monotonic()
             if self._is_idle:
                 self._set_active()
