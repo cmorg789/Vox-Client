@@ -1,4 +1,4 @@
-"""Server strip – 52px vertical bar with server icon buttons."""
+"""Server strip – 52px vertical bar with DM button and server icon buttons."""
 
 from __future__ import annotations
 
@@ -68,10 +68,66 @@ class _ServerButton(QWidget):
             )
 
 
+class _IconButton(QWidget):
+    """36x36 icon-based button with indicator bar, used for the DM button."""
+
+    clicked = pyqtSignal()
+
+    def __init__(self, icon_path: str) -> None:
+        super().__init__()
+        self._icon_path = icon_path
+        self._active = False
+
+        self.setFixedSize(52, 36)
+
+        self._indicator = QLabel(self)
+        self._indicator.setFixedSize(3, 20)
+        self._indicator.move(0, 8)
+        self._indicator.hide()
+
+        self._btn = QPushButton(self)
+        self._btn.setFixedSize(36, 36)
+        self._btn.move(8, 0)
+        self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn.clicked.connect(self.clicked.emit)
+
+        self._update_style()
+
+    def set_active(self, active: bool) -> None:
+        self._active = active
+        self._update_style()
+
+    def _update_style(self) -> None:
+        state = AppState.instance()
+        c = state.theme.colors
+        icon_color = c.accent_bright if self._active else c.text_secondary
+        self._btn.setIcon(tinted_icon(self._icon_path, icon_color, size=20))
+        self._btn.setIconSize(QSize(20, 20))
+        if self._active:
+            self._indicator.setStyleSheet(
+                f"background-color: {c.accent}; border-radius: 0px;"
+                f"border-top-right-radius: 2px; border-bottom-right-radius: 2px;"
+            )
+            self._indicator.show()
+            self._btn.setStyleSheet(
+                f"QPushButton {{ background-color: {c.bg_panel}; "
+                f"border: 1px solid {c.accent}; border-radius: 6px; padding: 0px; }}"
+            )
+        else:
+            self._indicator.hide()
+            self._btn.setStyleSheet(
+                f"QPushButton {{ background-color: {c.bg_panel}; "
+                f"border: 1px solid {c.border}; border-radius: 6px; padding: 0px; }}"
+                f"QPushButton:hover {{ background-color: {c.bg_hover}; "
+                f"border-color: {c.border_bright}; }}"
+            )
+
+
 class ServerStrip(QWidget):
     """Vertical strip of server icons on the far left."""
 
     server_selected = pyqtSignal(int)
+    dm_clicked = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -83,7 +139,9 @@ class ServerStrip(QWidget):
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._buttons: list[_ServerButton] = []
+        self._dm_button: _IconButton | None = None
         self._active_idx = 0
+        self._dm_active = False
 
         state = AppState.instance()
         c = state.theme.colors
@@ -103,12 +161,32 @@ class ServerStrip(QWidget):
         for btn in self._buttons:
             btn.deleteLater()
         self._buttons.clear()
+        self._dm_button = None
 
         # Clear layout (separator, add button, stretch)
         while self._layout.count():
             child = self._layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+
+        # DM button at the very top
+        dm_btn = _IconButton(str(_ICONS_DIR / "account-group.svg"))
+        dm_btn.clicked.connect(self._on_dm_clicked)
+        dm_btn.set_active(self._dm_active)
+        self._layout.addWidget(dm_btn)
+        self._dm_button = dm_btn
+
+        # Separator between DM button and server button
+        sep_row1 = QWidget()
+        sep_row1.setFixedHeight(2)
+        sep_row1_layout = QHBoxLayout(sep_row1)
+        sep_row1_layout.setContentsMargins(8, 0, 8, 0)
+        sep_row1_layout.setSpacing(0)
+        sep1 = QWidget()
+        sep1.setFixedHeight(2)
+        sep1.setStyleSheet(f"background-color: {c.border};")
+        sep_row1_layout.addWidget(sep1)
+        self._layout.addWidget(sep_row1)
 
         # Current server
         name = state.server_name or "S"
@@ -148,13 +226,35 @@ class ServerStrip(QWidget):
 
         self._layout.addStretch()
 
-        # Mark first active
-        if self._buttons:
+        # Mark active state
+        if self._dm_active:
+            for b in self._buttons:
+                b.set_active(False)
+        elif self._buttons:
             self._buttons[0].set_active(True)
 
     def _on_clicked(self, idx: int) -> None:
+        self._dm_active = False
+        if self._dm_button is not None:
+            self._dm_button.set_active(False)
         for i, btn in enumerate(self._buttons):
             btn.set_active(i == idx)
         self._active_idx = idx
+        state = AppState.instance()
+        if state._dm_mode:
+            state._dm_mode = False
+            state.dm_mode_changed.emit(False)
         if self._buttons[idx].server_id is not None:
             self.server_selected.emit(self._buttons[idx].server_id)
+
+    def _on_dm_clicked(self) -> None:
+        self._dm_active = True
+        if self._dm_button is not None:
+            self._dm_button.set_active(True)
+        for btn in self._buttons:
+            btn.set_active(False)
+        state = AppState.instance()
+        if not state._dm_mode:
+            state._dm_mode = True
+            state.dm_mode_changed.emit(True)
+        self.dm_clicked.emit()

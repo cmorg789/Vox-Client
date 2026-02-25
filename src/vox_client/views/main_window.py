@@ -55,6 +55,7 @@ def _is_auth_error(exc: BaseException) -> bool:
 from vox_client.widgets.channel_sidebar import ChannelSidebar
 from vox_client.widgets.chat_header import ChatHeader
 from vox_client.widgets.chat_input import ChatInput
+from vox_client.widgets.dm_sidebar import DMSidebar
 from vox_client.widgets.member_sidebar import MemberSidebar
 from vox_client.widgets.message_list import MessageList
 from vox_client.widgets.server_strip import ServerStrip
@@ -102,6 +103,10 @@ class MainWindow(QMainWindow):
 
         self._channel_sidebar = ChannelSidebar()
         left_top_layout.addWidget(self._channel_sidebar)
+
+        self._dm_sidebar = DMSidebar()
+        self._dm_sidebar.hide()
+        left_top_layout.addWidget(self._dm_sidebar)
 
         left_layout.addWidget(left_top, stretch=1)
 
@@ -172,6 +177,13 @@ class MainWindow(QMainWindow):
         self._state.typing_started.connect(self._on_remote_typing)
         self._state.presence_updated.connect(self._on_presence_updated)
         self._state.theme_changed.connect(self._on_theme_changed)
+
+        # DM signals
+        self._server_strip.dm_clicked.connect(self._on_dm_mode_enter)
+        self._dm_sidebar.dm_selected.connect(self._on_dm_selected)
+        self._state.dm_mode_changed.connect(self._on_dm_mode_changed)
+        self._member_sidebar.send_message_requested.connect(self._on_member_send_message)
+        self._member_sidebar.open_dm_requested.connect(self.open_dm_with_user)
 
         # Show logged-out state initially
         self._user_panel.update_user()
@@ -380,6 +392,7 @@ class MainWindow(QMainWindow):
 
         log.info("Gateway connected, loading server data")
         await state.load_server_data()
+        await state.load_dm_list()
         log.info("Server data loaded, populating UI")
         self.populate()
 
@@ -387,6 +400,7 @@ class MainWindow(QMainWindow):
     async def _on_feed_selected(self, feed_id: int) -> None:
         try:
             self._state.current_feed_id = feed_id
+            self._state.current_dm_id = None
             name = self._state.get_feed_name(feed_id)
             self._chat_header.set_channel(feed_id)
             self._chat_input.set_channel_name(name)
@@ -419,8 +433,17 @@ class MainWindow(QMainWindow):
 
     @asyncSlot(str)
     async def _on_send(self, text: str) -> None:
+        if self._state.client is None:
+            return
+        dm_id = self._state.current_dm_id
+        if dm_id is not None:
+            try:
+                await self._state.client.dms.send_message(dm_id, body=text)
+            except Exception:
+                log.error("Failed to send DM message to dm %d", dm_id, exc_info=True)
+            return
         feed_id = self._state.current_feed_id
-        if feed_id is None or self._state.client is None:
+        if feed_id is None:
             return
         try:
             await self._state.client.messages.send(feed_id, body=text)
@@ -430,9 +453,16 @@ class MainWindow(QMainWindow):
     # -- typing indicator ------------------------------------------------------
 
     def _on_remote_typing(self, event: object) -> None:
-        feed_id = getattr(event, "feed_id", None)
         user_id = getattr(event, "user_id", None)
-        if feed_id != self._state.current_feed_id or user_id is None:
+        if user_id is None:
+            return
+        # Check if the typing event matches the current context (feed or DM)
+        dm_id = getattr(event, "dm_id", None)
+        feed_id = getattr(event, "feed_id", None)
+        if self._state.current_dm_id is not None:
+            if dm_id != self._state.current_dm_id:
+                return
+        elif feed_id != self._state.current_feed_id:
             return
         # Don't show our own typing
         if user_id == self._state.user_id:
@@ -472,10 +502,22 @@ class MainWindow(QMainWindow):
         if self._typing_throttle.isActive():
             return
         self._typing_throttle.start(5000)
-        feed_id = self._state.current_feed_id
         gw = self._state.gateway
         gw_loop = getattr(self, "_gw_loop", None)
-        if feed_id is not None and gw is not None and gw_loop is not None:
+        if gw is None or gw_loop is None:
+            return
+        dm_id = self._state.current_dm_id
+        if dm_id is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    gw.send("typing_start", {"dm_id": dm_id}),
+                    gw_loop,
+                )
+            except Exception:
+                log.debug("Failed to send DM typing indicator", exc_info=True)
+            return
+        feed_id = self._state.current_feed_id
+        if feed_id is not None:
             try:
                 asyncio.run_coroutine_threadsafe(
                     gw.send_typing(feed_id),
@@ -483,6 +525,70 @@ class MainWindow(QMainWindow):
                 )
             except Exception:
                 log.debug("Failed to send typing indicator", exc_info=True)
+
+    # -- DM mode ---------------------------------------------------------------
+
+    @asyncSlot()
+    async def _on_dm_mode_enter(self) -> None:
+        """Enter DM mode: load DM list and refresh sidebar."""
+        state = self._state
+        if state.client is not None:
+            await state.load_dm_list()
+        self._dm_sidebar.refresh()
+
+    def _on_dm_mode_changed(self, entering_dm: bool) -> None:
+        """Switch between DM mode and server mode."""
+        if entering_dm:
+            self._channel_sidebar.hide()
+            self._dm_sidebar.show()
+            self._member_sidebar.hide()
+        else:
+            self._channel_sidebar.show()
+            self._dm_sidebar.hide()
+            self._member_sidebar.show()
+
+    @asyncSlot(int)
+    async def _on_dm_selected(self, dm_id: int) -> None:
+        """Handle selection of a DM conversation."""
+        try:
+            state = self._state
+            state.current_dm_id = dm_id
+            state.current_feed_id = None
+            name = state.get_dm_display_name(dm_id)
+            self._chat_header.set_dm(dm_id)
+            self._chat_input.set_dm_name(name)
+            # Clear typing indicators from previous context
+            for timer in self._typers.values():
+                timer.deleteLater()
+            self._typers.clear()
+            self._typing_label.setText("")
+            await self._message_list.load_dm_messages(dm_id)
+        except Exception:
+            log.error("Failed to select DM %d", dm_id, exc_info=True)
+
+    def open_dm_with_user(self, dm_id: int) -> None:
+        """Switch to DM mode and select a specific conversation (used by member sidebar)."""
+        state = self._state
+        if not state._dm_mode:
+            state._dm_mode = True
+            state.dm_mode_changed.emit(True)
+            self._server_strip._dm_active = True
+            self._server_strip.populate()
+        self._dm_sidebar.select_dm(dm_id)
+
+    @asyncSlot(int)
+    async def _on_member_send_message(self, user_id: int) -> None:
+        """Open or create a DM with a user from the member sidebar."""
+        state = self._state
+        if state.client is None:
+            return
+        try:
+            dm = await state.client.dms.open(recipient_id=user_id)
+            state._dms[dm.dm_id] = dm
+            state.dm_list_changed.emit()
+            self.open_dm_with_user(dm.dm_id)
+        except Exception:
+            log.error("Failed to open DM with user %d", user_id, exc_info=True)
 
     # -- presence --------------------------------------------------------------
 
@@ -500,6 +606,7 @@ class MainWindow(QMainWindow):
         # Container-level inline styles
         self._server_strip.restyle()
         self._channel_sidebar.restyle()
+        self._dm_sidebar.restyle()
         self._voice_status_bar.restyle()
         self._user_panel.restyle()
         self._member_sidebar.restyle()
@@ -521,6 +628,7 @@ class MainWindow(QMainWindow):
         # Rebuild child widgets (they pick up new colors at construction time)
         self._server_strip.populate()
         self._channel_sidebar.populate()
+        self._dm_sidebar.refresh()
         self._member_sidebar.refresh()
         self._user_panel.update_user()
 
@@ -546,6 +654,9 @@ class MainWindow(QMainWindow):
         state.gateway = None
         state.user_id = None
         state.current_feed_id = None
+        state.current_dm_id = None
+        state._dm_mode = False
+        state._dms.clear()
         state._members.clear()
         state._roles.clear()
         state._presences.clear()
@@ -556,6 +667,11 @@ class MainWindow(QMainWindow):
         self._user_panel.update_user()
         self._member_sidebar.refresh()
         self._channel_sidebar.populate()
+        self._dm_sidebar.refresh()
+        # Ensure we're back in server mode
+        self._channel_sidebar.show()
+        self._dm_sidebar.hide()
+        self._member_sidebar.show()
 
     @asyncSlot()
     async def _on_server_settings(self) -> None:

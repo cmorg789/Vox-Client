@@ -6,8 +6,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
@@ -17,10 +17,13 @@ from vox_client.widgets.ui_helpers import clear_layout
 class _MemberItem(QWidget):
     """Single member entry with avatar, presence dot, name, and status text."""
 
+    send_message_requested = pyqtSignal(int)  # user_id
+
     def __init__(self, user_id: int) -> None:
         super().__init__()
         self.user_id = user_id
         self.setFixedHeight(36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         state = AppState.instance()
         c = state.theme.colors
@@ -69,9 +72,41 @@ class _MemberItem(QWidget):
 
         layout.addLayout(text_col, stretch=1)
 
+    def contextMenuEvent(self, event) -> None:  # noqa: ANN001
+        state = AppState.instance()
+        c = state.theme.colors
+        # Don't show context menu for our own entry
+        if self.user_id == state.user_id:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background-color: {c.bg_panel}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 4px; padding: 4px; "
+            f"font-size: 12px; }}"
+            f"QMenu::item {{ padding: 6px 12px; border-radius: 3px; }}"
+            f"QMenu::item:selected {{ background-color: {c.bg_active}; }}"
+        )
+        send_msg = menu.addAction("Send Message")
+        action = menu.exec(event.globalPos())
+        if action is send_msg:
+            self.send_message_requested.emit(self.user_id)
+
+    profile_dm_opened = pyqtSignal(int)  # dm_id from profile card
+
+    def mousePressEvent(self, event) -> None:  # noqa: ANN001
+        if event.button() == Qt.MouseButton.LeftButton:
+            from vox_client.widgets.user_profile_card import UserProfileCard
+            card = UserProfileCard(self.user_id, parent=None)
+            card.message_clicked.connect(self.profile_dm_opened.emit)
+            card.show_near(event.globalPosition().toPoint())
+
 
 class MemberSidebar(QFrame):
     """Right panel listing members grouped by presence status."""
+
+    send_message_requested = pyqtSignal(int)  # user_id (from context menu)
+    open_dm_requested = pyqtSignal(int)       # dm_id (from profile card)
 
     def __init__(self) -> None:
         super().__init__()
@@ -145,7 +180,10 @@ class MemberSidebar(QFrame):
             self._list_layout.addWidget(header)
 
             for uid in sorted(user_ids, key=lambda u: state.get_display_name(u).lower()):
-                self._list_layout.addWidget(_MemberItem(uid))
+                item = _MemberItem(uid)
+                item.send_message_requested.connect(self.send_message_requested.emit)
+                item.profile_dm_opened.connect(self.open_dm_requested.emit)
+                self._list_layout.addWidget(item)
 
         _add_group("ONLINE", online)
         _add_group("IDLE", idle)

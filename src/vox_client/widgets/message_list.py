@@ -164,6 +164,7 @@ class MessageList(QScrollArea):
         self.setWidget(self._container)
 
         self._current_feed_id: int | None = None
+        self._current_dm_id: int | None = None
         self._last_author: int | None = None
         self._last_date: str | None = None
 
@@ -197,6 +198,7 @@ class MessageList(QScrollArea):
     async def load_messages(self, feed_id: int) -> None:
         """Fetch and display the most recent messages for *feed_id*."""
         self._current_feed_id = feed_id
+        self._current_dm_id = None
         self._last_author = None
         self._last_date = None
         self._clear()
@@ -226,6 +228,36 @@ class MessageList(QScrollArea):
 
         self._scroll_to_bottom()
 
+    async def load_dm_messages(self, dm_id: int) -> None:
+        """Fetch and display the most recent messages for a DM conversation."""
+        self._current_dm_id = dm_id
+        self._current_feed_id = None
+        self._last_author = None
+        self._last_date = None
+        self._clear()
+
+        state = AppState.instance()
+        assert state.client is not None
+        try:
+            result = await state.client.dms.list_messages(dm_id, limit=150)
+        except Exception:
+            log.error("Failed to load DM messages for dm %d", dm_id, exc_info=True)
+            return
+
+        # Race guard
+        if self._current_dm_id != dm_id:
+            return
+
+        self._has_more = len(result.messages) >= 150
+
+        for msg in reversed(result.messages):
+            self._add_message(msg.author_id, msg.timestamp, msg.body, msg_id=msg.msg_id)
+
+        if result.messages:
+            self._oldest_msg_id = result.messages[-1].msg_id
+
+        self._scroll_to_bottom()
+
     # -- internal ------------------------------------------------------------
 
     def _clear(self) -> None:
@@ -240,6 +272,14 @@ class MessageList(QScrollArea):
         self._loading_older = False
         self._has_more = True
         clear_layout(self._layout)
+
+    def _matches_current_context(self, event: object) -> bool:
+        """Check if a message event belongs to the currently viewed feed or DM."""
+        if self._current_dm_id is not None:
+            return getattr(event, "dm_id", None) == self._current_dm_id
+        if self._current_feed_id is not None:
+            return getattr(event, "feed_id", None) == self._current_feed_id
+        return False
 
     def _make_date_divider(self, date_str: str) -> QWidget:
         """Create a date divider with horizontal lines flanking the label."""
@@ -412,8 +452,7 @@ class MessageList(QScrollArea):
 
     def _on_message_received(self, event: object) -> None:
         try:
-            feed_id = getattr(event, "feed_id", None)
-            if feed_id != self._current_feed_id:
+            if not self._matches_current_context(event):
                 return
             self._add_message(
                 getattr(event, "author_id", None),
@@ -427,8 +466,7 @@ class MessageList(QScrollArea):
 
     def _on_message_updated(self, event: object) -> None:
         try:
-            feed_id = getattr(event, "feed_id", None)
-            if feed_id != self._current_feed_id:
+            if not self._matches_current_context(event):
                 return
             msg_id = getattr(event, "msg_id", None)
             if msg_id is None or msg_id not in self._msg_widgets:
@@ -451,8 +489,7 @@ class MessageList(QScrollArea):
 
     def _on_message_deleted(self, event: object) -> None:
         try:
-            feed_id = getattr(event, "feed_id", None)
-            if feed_id != self._current_feed_id:
+            if not self._matches_current_context(event):
                 return
             msg_id = getattr(event, "msg_id", None)
             if msg_id is None or msg_id not in self._msg_rows:
@@ -620,7 +657,10 @@ class MessageList(QScrollArea):
                     edit_input.deleteLater()
 
         try:
-            await state.client.messages.edit(self._current_feed_id, msg_id, new_text)
+            if self._current_dm_id is not None:
+                await state.client.dms.edit_message(self._current_dm_id, msg_id, new_text)
+            else:
+                await state.client.messages.edit(self._current_feed_id, msg_id, new_text)
             # The gateway message_update event will refresh the label, but
             # update locally immediately for responsiveness.
             self._msg_bodies[msg_id] = new_text
@@ -657,7 +697,10 @@ class MessageList(QScrollArea):
         if state.client is None:
             return
         try:
-            await state.client.messages.delete(self._current_feed_id, msg_id)
+            if self._current_dm_id is not None:
+                await state.client.dms.delete_message(self._current_dm_id, msg_id)
+            else:
+                await state.client.messages.delete(self._current_feed_id, msg_id)
             # The gateway message_delete event will remove the widgets.
         except Exception:
             log.error("Failed to delete message %d", msg_id, exc_info=True)
@@ -671,7 +714,7 @@ class MessageList(QScrollArea):
             value == 0
             and not self._loading_older
             and self._has_more
-            and self._current_feed_id is not None
+            and (self._current_feed_id is not None or self._current_dm_id is not None)
         ):
             await self._load_older_messages()
 
@@ -683,18 +726,28 @@ class MessageList(QScrollArea):
 
         self._loading_older = True
         feed_id = self._current_feed_id
+        dm_id = self._current_dm_id
 
         try:
-            result = await state.client.messages.list(
-                feed_id, limit=150, before=self._oldest_msg_id,
-            )
+            if dm_id is not None:
+                result = await state.client.dms.list_messages(
+                    dm_id, limit=150, before=self._oldest_msg_id,
+                )
+            else:
+                result = await state.client.messages.list(
+                    feed_id, limit=150, before=self._oldest_msg_id,
+                )
         except Exception:
-            log.error("Failed to load older messages for feed %d", feed_id, exc_info=True)
+            ctx = f"dm {dm_id}" if dm_id else f"feed {feed_id}"
+            log.error("Failed to load older messages for %s", ctx, exc_info=True)
             self._loading_older = False
             return
 
         # Race guard
-        if self._current_feed_id != feed_id:
+        if dm_id is not None and self._current_dm_id != dm_id:
+            self._loading_older = False
+            return
+        if dm_id is None and self._current_feed_id != feed_id:
             self._loading_older = False
             return
 

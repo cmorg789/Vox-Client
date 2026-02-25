@@ -83,6 +83,31 @@ class ChatHeader(QFrame):
             self._divider.hide()
             self._topic_label.hide()
 
+    def set_dm(self, dm_id: int) -> None:
+        """Update header for a DM conversation."""
+        state = AppState.instance()
+        c = state.theme.colors
+        partner_id = state.get_dm_partner_id(dm_id)
+        name = state.get_dm_display_name(dm_id)
+
+        self._channel_label.setTextFormat(Qt.TextFormat.RichText)
+        self._channel_label.setText(
+            f'<span style="color:{c.text_dim}">@</span> {name}'
+        )
+
+        # Show presence as subtitle
+        if partner_id is not None:
+            presence = state.get_presence(partner_id)
+            status = getattr(presence, "status", "offline") if presence else "offline"
+            status_labels = {"online": "Online", "idle": "Idle", "dnd": "Do Not Disturb", "offline": "Offline"}
+            status_text = status_labels.get(status, "Offline")
+            self._divider.show()
+            self._topic_label.setText(status_text)
+            self._topic_label.show()
+        else:
+            self._divider.hide()
+            self._topic_label.hide()
+
     def clear(self) -> None:
         self._channel_label.setText("")
         self._divider.hide()
