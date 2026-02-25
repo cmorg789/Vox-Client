@@ -3,15 +3,130 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QFontMetrics, QImage, QKeyEvent, QTextCursor, QTextImageFormat
 
 log = logging.getLogger(__name__)
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.icons import tinted_icon
+
+
+class _RichInput(QTextEdit):
+    """Single-line QTextEdit that can render inline emoji images.
+
+    Exposes a QLineEdit-compatible interface so the emoji completer
+    works without modification.
+    """
+
+    returnPressed = pyqtSignal()
+    textChanged_str = pyqtSignal(str)  # mirrors QLineEdit.textChanged(str)
+
+    _MAX_HEIGHT = 160
+    _SINGLE_LINE = 32
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setTabChangesFocus(True)
+        self.setFixedHeight(self._SINGLE_LINE)
+
+        self._placeholder = ""
+        super().textChanged.connect(self._relay_text_changed)
+        self.document().contentsChanged.connect(self._auto_resize)
+
+    def _relay_text_changed(self) -> None:
+        self.textChanged_str.emit(self.text())
+
+    def _auto_resize(self) -> None:
+        doc = self.document()
+        doc.setTextWidth(self.viewport().width())
+        needed = int(doc.size().height()) + 2 * self.frameWidth()
+        h = max(self._SINGLE_LINE, min(needed, self._MAX_HEIGHT))
+        self.setFixedHeight(h)
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if needed > self._MAX_HEIGHT
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+    # -- QLineEdit-compatible API ------------------------------------------
+
+    def text(self) -> str:
+        """Return plain text with custom emoji rendered back as :name: shortcodes."""
+        doc = self.document()
+        result: list[str] = []
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid():
+                    fmt = frag.charFormat()
+                    if fmt.isImageFormat():
+                        img_fmt = fmt.toImageFormat()
+                        # The image name stores ":emoji_name:"
+                        result.append(img_fmt.name())
+                    else:
+                        result.append(frag.text())
+                it += 1
+            block = block.next()
+        return "".join(result)
+
+    def cursorPosition(self) -> int:  # noqa: N802
+        return self.textCursor().position()
+
+    def setCursorPosition(self, pos: int) -> None:  # noqa: N802
+        tc = self.textCursor()
+        # characterCount() returns UTF-16 code units (same as setPosition),
+        # minus 1 for the trailing block separator.  Using len(toPlainText())
+        # would count Python code points and clamp incorrectly for non-BMP chars.
+        max_pos = self.document().characterCount() - 1
+        tc.setPosition(min(pos, max_pos))
+        self.setTextCursor(tc)
+
+    def setPlaceholderText(self, text: str) -> None:  # noqa: N802
+        self._placeholder = text
+        super().setPlaceholderText(text)
+
+    def placeholderText(self) -> str:  # noqa: N802
+        return self._placeholder
+
+    def clear(self) -> None:
+        super().clear()
+
+    def insert_emoji_image(self, name: str, image_path: str) -> None:
+        """Insert a custom emoji as an inline image at the cursor."""
+        res_name = f":{name}:"
+        img = QImage(image_path)
+        if img.isNull():
+            # Fallback to text
+            self.textCursor().insertText(res_name)
+            return
+        fm = QFontMetrics(self.font())
+        size = fm.height()
+        scaled = img.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        from PyQt6.QtCore import QUrl
+        self.document().addResource(2, QUrl(res_name), scaled)  # 2 = QTextDocument.ResourceType.ImageResource
+        fmt = QTextImageFormat()
+        fmt.setName(res_name)
+        fmt.setWidth(size)
+        fmt.setHeight(size)
+        self.textCursor().insertImage(fmt)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                self.returnPressed.emit()
+                return
+        super().keyPressEvent(event)
 
 
 class ChatInput(QFrame):
@@ -22,7 +137,8 @@ class ChatInput(QFrame):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setFixedHeight(52)
+        self.setMinimumHeight(52)
+        self.setMaximumHeight(180)
 
         state = AppState.instance()
         c = state.theme.colors
@@ -60,15 +176,15 @@ class ChatInput(QFrame):
         )
         field_layout.addWidget(self._plus_btn)
 
-        # Line edit (borderless, bg matches parent)
-        self._input = QLineEdit()
+        # Rich text input (borderless, bg matches parent)
+        self._input = _RichInput()
         self._input.setPlaceholderText("Message #channel")
         self._input.setStyleSheet(
             f"background: transparent; color: {c.text_primary}; "
-            f"border: none; padding: 6px 4px;"
+            f"border: none; padding: 4px 4px;"
         )
         self._input.returnPressed.connect(self._on_send)
-        self._input.textChanged.connect(self._on_text_changed)
+        self._input.textChanged_str.connect(self._on_text_changed)
         field_layout.addWidget(self._input, stretch=1)
 
         # Emoji button inside the field (right side)
@@ -127,14 +243,23 @@ class ChatInput(QFrame):
         self._emoji_picker.show_at(pos)
 
     def _insert_emoji_text(self, text: str) -> None:
-        cursor_pos = self._input.cursorPosition()
-        current = self._input.text()
-        new_text = current[:cursor_pos] + text + current[cursor_pos:]
-        self._input.setText(new_text)
-        # Qt cursor position counts UTF-16 code units, not Python chars.
-        # Encode as UTF-16 (minus BOM) to get the real offset.
-        utf16_len = len(text.encode("utf-16-le")) // 2
-        self._input.setCursorPosition(cursor_pos + utf16_len)
+        import re
+        # Hide the picker first so the Popup releases focus
+        if self._emoji_picker is not None:
+            self._emoji_picker.hide()
+        # Check if this is a custom emoji shortcode like :name:
+        m = re.fullmatch(r":(\w+):", text)
+        if m:
+            state = AppState.instance()
+            local_path = state.get_emoji_image_path(m.group(1))
+            if local_path:
+                self._input.insert_emoji_image(m.group(1), local_path)
+                self._input.setFocus()
+                return
+        # Unicode emoji or unresolved custom — insert as text
+        tc = self._input.textCursor()
+        tc.insertText(text)
+        self._input.setTextCursor(tc)
         self._input.setFocus()
 
     def restyle(self) -> None:
@@ -157,7 +282,7 @@ class ChatInput(QFrame):
         )
         self._input.setStyleSheet(
             f"background: transparent; color: {c.text_primary}; "
-            f"border: none; padding: 6px 4px;"
+            f"border: none; padding: 4px 4px;"
         )
         self._emoji_btn.setIcon(tinted_icon(_ICONS_DIR / "emoticon-outline.svg", c.text_secondary))
         self._emoji_btn.setStyleSheet(
