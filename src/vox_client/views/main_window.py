@@ -14,6 +14,7 @@ from qasync import asyncSlot
 from vox_sdk import Client
 from vox_sdk.models.users import PresenceResponse
 
+from vox_client.idle import IdleManager
 from vox_client.state import AppState
 from vox_client.widgets.ui_helpers import await_dialog
 
@@ -262,6 +263,8 @@ class MainWindow(QMainWindow):
             banner.show()
 
     def closeEvent(self, event: object) -> None:
+        if hasattr(self, "_idle_manager"):
+            self._idle_manager.stop()
         s = QSettings("Vox", "VoxClient")
         s.setValue("window/geometry", self.saveGeometry())
         super().closeEvent(event)
@@ -370,6 +373,10 @@ class MainWindow(QMainWindow):
             user_id=user_id,
             status="online",
         )
+
+        # Start idle detection
+        self._idle_manager = IdleManager(gw_loop, parent=self)
+        self._idle_manager.start()
 
         log.info("Gateway connected, loading server data")
         await state.load_server_data()
@@ -529,6 +536,8 @@ class MainWindow(QMainWindow):
     @asyncSlot()
     async def _on_logout(self) -> None:
         """Clear session and reset to logged-out state."""
+        if hasattr(self, "_idle_manager"):
+            self._idle_manager.stop()
         state = self._state
         # Leave voice room if connected
         await state.voice_leave()

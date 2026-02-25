@@ -978,6 +978,52 @@ class _PrivacyPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
+        # -- Auto-Idle ---------------------------------------------------
+        layout.addWidget(section_label("AUTO-IDLE"))
+
+        idle_row = QHBoxLayout()
+        idle_row.setSpacing(8)
+        idle_label = QLabel("Go idle after")
+        idle_label.setStyleSheet(
+            f"color: {c.text_secondary}; font-size: 12px; border: none;"
+        )
+        idle_row.addWidget(idle_label)
+
+        from PyQt6.QtWidgets import QSpinBox
+        from PyQt6.QtCore import QSettings
+
+        settings = QSettings("Vox", "VoxClient")
+        current_minutes = settings.value("idle/timeout_minutes", 5, type=int)
+
+        self._idle_spin = QSpinBox()
+        self._idle_spin.setRange(1, 30)
+        self._idle_spin.setValue(current_minutes)
+        self._idle_spin.setSuffix(" min")
+        self._idle_spin.setFixedWidth(80)
+        self._idle_spin.setStyleSheet(
+            f"QSpinBox {{ color: {c.text_primary}; background-color: {c.bg_input}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 2px 4px; "
+            f"font-size: 12px; }}"
+            f"QSpinBox::up-button, QSpinBox::down-button {{ "
+            f"background-color: {c.bg_hover}; border: none; width: 14px; }}"
+            f"QSpinBox::up-arrow {{ image: none; border: none; }}"
+            f"QSpinBox::down-arrow {{ image: none; border: none; }}"
+        )
+        self._idle_spin.valueChanged.connect(self._on_idle_timeout_changed)
+        idle_row.addWidget(self._idle_spin)
+
+        suffix_label = QLabel("of inactivity")
+        suffix_label.setStyleSheet(
+            f"color: {c.text_secondary}; font-size: 12px; border: none;"
+        )
+        idle_row.addWidget(suffix_label)
+        idle_row.addStretch()
+        layout.addLayout(idle_row)
+
+        layout.addSpacing(8)
+        layout.addWidget(separator())
+        layout.addSpacing(4)
+
         layout.addWidget(section_label("DIRECT MESSAGES"))
 
         self._dm_group = QButtonGroup(self)
@@ -1119,6 +1165,23 @@ class _PrivacyPage(QWidget):
         except Exception as exc:
             log.error("Failed to unblock user %d: %s", target_id, exc)
             set_status(self._status, str(exc), "error")
+
+    def _on_idle_timeout_changed(self, minutes: int) -> None:
+        # Find the MainWindow's IdleManager and update it live
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        for w in app.topLevelWidgets():
+            idle_mgr = getattr(w, "_idle_manager", None)
+            if idle_mgr is not None:
+                idle_mgr.set_timeout(minutes)
+                return
+        # No live manager (not logged in?) — just persist the setting
+        from PyQt6.QtCore import QSettings
+
+        QSettings("Vox", "VoxClient").setValue("idle/timeout_minutes", minutes)
 
 
 # -- About Page --------------------------------------------------------------
