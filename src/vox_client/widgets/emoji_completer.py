@@ -6,7 +6,8 @@ import logging
 import re
 
 from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QPixmap
+from PyQt6.QtGui import QKeyEvent, QPixmap, QTextCursor
+from PyQt6.QtCore import QUrl
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
@@ -24,7 +25,7 @@ class EmojiCompleter(QWidget):
 
     emoji_selected = pyqtSignal(str)  # emits Unicode char or :name: for custom
 
-    def __init__(self, line_edit: QLineEdit, parent: QWidget | None = None) -> None:
+    def __init__(self, line_edit: QLineEdit | QWidget, parent: QWidget | None = None) -> None:
         super().__init__(
             parent,
             Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint,
@@ -43,7 +44,9 @@ class EmojiCompleter(QWidget):
 
         self.hide()
 
-        line_edit.textChanged.connect(self._on_text_changed)
+        # Support both QLineEdit (textChanged(str)) and _RichInput (textChanged_str(str))
+        sig = getattr(line_edit, "textChanged_str", None) or line_edit.textChanged
+        sig.connect(self._on_text_changed)
         line_edit.installEventFilter(self)
 
     def eventFilter(self, obj, event) -> bool:  # noqa: ANN001
@@ -104,6 +107,7 @@ class EmojiCompleter(QWidget):
 
         c = AppState.instance().theme.colors
 
+        state = AppState.instance()
         for em in custom_matches:
             row = _CompletionRow(
                 emoji_text=None,
@@ -114,8 +118,15 @@ class EmojiCompleter(QWidget):
             )
             layout.addWidget(row)
             self._rows.append(row)
-            if em.image:
-                self._load_image(row, em.image)
+            local_path = state.get_emoji_image_path(em.name)
+            if local_path:
+                row.set_pixmap(QPixmap(local_path).scaled(
+                    32, 32,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ))
+            elif em.image:
+                self._load_image(row, state._resolve_image_url(em.image))
 
         for entry in unicode_matches:
             row = _CompletionRow(
@@ -134,7 +145,7 @@ class EmojiCompleter(QWidget):
         if url in self._pixmap_cache:
             row.set_pixmap(self._pixmap_cache[url])
             return
-        req = QNetworkRequest(url)
+        req = QNetworkRequest(QUrl(url))
         reply = self._nam.get(req)
         reply.finished.connect(lambda r=reply, rw=row, u=url: self._on_image_loaded(r, rw, u))
 
@@ -166,13 +177,51 @@ class EmojiCompleter(QWidget):
         if not self._rows:
             return
         row = self._rows[self._selected]
-        # Replace :query with the emoji
+
+        # --- QTextEdit-backed input (_RichInput) → use QTextCursor directly
+        #     so the cursor lands after the insertion without coordinate math.
+        tc_fn = getattr(self._line_edit, "textCursor", None)
+        set_tc = getattr(self._line_edit, "setTextCursor", None)
+        if tc_fn is not None and set_tc is not None:
+            tc: QTextCursor = tc_fn()
+            cur_pos = tc.position()
+
+            # Check if input supports inline emoji images
+            import re
+            m = re.fullmatch(r":(\w+):", row.value)
+            insert_fn = getattr(self._line_edit, "insert_emoji_image", None)
+            if m and insert_fn:
+                state = AppState.instance()
+                local_path = state.get_emoji_image_path(m.group(1))
+                if local_path:
+                    # Select the :query range and delete it, then insert image
+                    tc.setPosition(self._match_start)
+                    tc.setPosition(cur_pos, QTextCursor.MoveMode.KeepAnchor)
+                    tc.removeSelectedText()
+                    set_tc(tc)
+                    insert_fn(m.group(1), local_path)
+                    self.emoji_selected.emit(row.value)
+                    self.hide()
+                    return
+
+            # Select the :query range and replace with emoji text
+            tc.setPosition(self._match_start)
+            tc.setPosition(cur_pos, QTextCursor.MoveMode.KeepAnchor)
+            tc.insertText(row.value)
+            set_tc(tc)
+            self.emoji_selected.emit(row.value)
+            self.hide()
+            return
+
+        # --- Plain QLineEdit fallback: string surgery + UTF-16 cursor math
         text = self._line_edit.text()
         before = text[: self._match_start]
         after = text[self._line_edit.cursorPosition() :]
         new_text = before + row.value + after
         self._line_edit.setText(new_text)
-        self._line_edit.setCursorPosition(len(before) + len(row.value))
+        utf16_before = len(before.encode("utf-16-le")) // 2
+        utf16_value = len(row.value.encode("utf-16-le")) // 2
+        self._line_edit.setCursorPosition(utf16_before + utf16_value)
         self.emoji_selected.emit(row.value)
         self.hide()
 
