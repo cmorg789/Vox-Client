@@ -69,6 +69,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Vox")
         self.resize(1100, 700)
 
+        # Restore saved window geometry
+        s = QSettings("Vox", "VoxClient")
+        geo = s.value("window/geometry")
+        if geo is not None:
+            self.restoreGeometry(geo)
+
         self._state = AppState.instance()
 
         # -- Central widget with HBox --------------------------------
@@ -254,6 +260,11 @@ class MainWindow(QMainWindow):
             banner.raise_()
             banner.setGeometry(0, 0, central.width(), 32)
             banner.show()
+
+    def closeEvent(self, event: object) -> None:
+        s = QSettings("Vox", "VoxClient")
+        s.setValue("window/geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def resizeEvent(self, event: object) -> None:
         super().resizeEvent(event)
