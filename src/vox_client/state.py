@@ -560,7 +560,10 @@ class AppState(QObject):
 
     def _execute_on_main(self, fn: object) -> None:
         """Run a callable on the main thread (slot for _run_on_main signal)."""
-        fn()  # type: ignore[operator]
+        try:
+            fn()  # type: ignore[operator]
+        except Exception:
+            log.exception("Error executing gateway callback on main thread")
 
     # -- gateway setup -------------------------------------------------------
 
@@ -684,7 +687,7 @@ class AppState(QObject):
                 feed = FeedInfo(
                     feed_id=e.feed_id,
                     name=e.name,
-                    type=e.type or "text",
+                    type=e.channel_type or "text",
                     topic=getattr(e, "topic", None),
                     category_id=getattr(e, "category_id", None),
                 )
@@ -726,7 +729,7 @@ class AppState(QObject):
                 room = RoomInfo(
                     room_id=e.room_id,
                     name=e.name,
-                    type=e.type or "voice",
+                    type=e.channel_type or "voice",
                     category_id=getattr(e, "category_id", None),
                 )
                 self._rooms[room.room_id] = room
