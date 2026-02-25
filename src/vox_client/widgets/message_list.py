@@ -36,6 +36,7 @@ from vox_client.widgets.ui_helpers import clear_layout
 
 _CODE_RE = re.compile(r"`([^`]+)`")
 _MENTION_RE = re.compile(r"@(\w+)")
+_CUSTOM_EMOJI_RE = re.compile(r":(\w+):")
 _LONG_WORD_RE = re.compile(r"\S{20,}")
 _SENTINEL: object = object()  # default marker for _add_message kwargs
 
@@ -43,13 +44,29 @@ _SENTINEL: object = object()  # default marker for _add_message kwargs
 def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, mention_bg: str) -> str:
     """Apply basic markdown formatting to message body.
 
-    Returns HTML-safe text with inline code and @mention highlights.
+    Returns HTML-safe text with inline code, @mention highlights,
+    and custom emoji images.
     """
     import html
 
     text = html.escape(body)
     # Insert zero-width spaces in long unbroken runs so QLabel can wrap them
     text = _LONG_WORD_RE.sub(lambda m: "\u200b".join(m.group()), text)
+    # Custom emoji — replace :name: with inline images when cached locally
+    state = AppState.instance()
+
+    def _emoji_replace(m: re.Match) -> str:
+        name = m.group(1)
+        path = state.get_emoji_image_path(name)
+        log.debug("Emoji render: :%s: path=%s", name, path)
+        if path:
+            return (
+                f'<img src="file://{path}" width="18" height="18"'
+                f' style="vertical-align: middle;">'
+            )
+        return m.group(0)
+
+    text = _CUSTOM_EMOJI_RE.sub(_emoji_replace, text)
     # Inline code
     text = _CODE_RE.sub(
         rf'<span style="background-color: {code_bg}; color: {code_color}; '
