@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 import sys
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QStandardPaths, QTimer, pyqtSignal
 
 from vox_sdk import Client, GatewayClient
 from vox_sdk.models.emoji import EmojiResponse
@@ -89,6 +90,7 @@ class AppState(QObject):
         self._rooms: dict[int, RoomInfo] = {}
         self._categories: dict[int, CategoryInfo] = {}
         self._emoji: dict[int, EmojiResponse] = {}
+        self._emoji_image_paths: dict[str, str] = {}  # name → local file path
         self._layout: ServerLayoutResponse | None = None
 
         # Voice state
@@ -172,6 +174,10 @@ class AppState(QObject):
     def get_custom_emoji(self) -> list[EmojiResponse]:
         """Return all cached custom server emoji."""
         return list(self._emoji.values())
+
+    def get_emoji_image_path(self, name: str) -> str | None:
+        """Return local file path for a custom emoji image, or None."""
+        return self._emoji_image_paths.get(name)
 
     def get_voice_members(self, room_id: int) -> dict[int, VoiceMemberData]:
         return self._voice_room_members.get(room_id, {})
@@ -497,14 +503,58 @@ class AppState(QObject):
         self.layout_loaded.emit()
 
     async def load_emoji(self) -> None:
-        """Fetch custom server emoji and populate cache."""
+        """Fetch custom server emoji, populate cache, and download images."""
         assert self.client is not None
         try:
             resp = await self.client.emoji.list_emoji()
             self._emoji = {e.emoji_id: e for e in resp.items}
             log.debug("Loaded %d custom emoji", len(self._emoji))
+            await self._cache_emoji_images()
         except Exception:
             log.warning("Failed to load custom emoji", exc_info=True)
+
+    def _resolve_image_url(self, url: str) -> str:
+        """Resolve a possibly-relative image URL to an absolute one."""
+        if url.startswith(("http://", "https://")):
+            return url
+        # Relative path — prepend the SDK client's base URL
+        if self.client is not None:
+            return self.client.http.base_url + url
+        return url
+
+    async def _cache_emoji_images(self) -> None:
+        """Download custom emoji images to a local cache directory."""
+        cache_root = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.CacheLocation,
+        )
+        cache_dir = Path(cache_root) / "emoji"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        async def _download(name: str, url: str) -> None:
+            ext = Path(url).suffix or ".png"
+            dest = cache_dir / f"{name}{ext}"
+            log.debug("Emoji cache: %s url=%s ext=%s dest=%s", name, url, ext, dest)
+            if dest.exists():
+                self._emoji_image_paths[name] = str(dest)
+                log.debug("Emoji cache hit: %s -> %s", name, dest)
+                return
+            try:
+                # Use the SDK's httpx client so auth headers and base URL
+                # are handled automatically (works with S3 pre-signed URLs too).
+                resp = await self.client.http.get(url)
+                resp.raise_for_status()
+                await asyncio.to_thread(dest.write_bytes, resp.content)
+                self._emoji_image_paths[name] = str(dest)
+                log.debug("Emoji cached: %s -> %s (%d bytes)", name, dest, len(resp.content))
+            except Exception:
+                log.debug("Failed to cache emoji image %s from %s", name, url, exc_info=True)
+
+        tasks = []
+        for em in self._emoji.values():
+            if em.image:
+                tasks.append(_download(em.name, em.image))
+        if tasks:
+            await asyncio.gather(*tasks)
 
     # -- thread bridge -------------------------------------------------------
 
@@ -772,6 +822,28 @@ class AppState(QObject):
 
         @self.gateway.on("emoji_create")
         async def _on_emoji_create(event):  # noqa: ANN001
+            name = getattr(event, "name", "")
+            image = getattr(event, "image", None)
+            # Download the image in the background before applying to main thread.
+            # Gateway handlers run on a dedicated event loop, so use urllib
+            # (synchronous, in a thread) instead of the SDK's async httpx client.
+            if image and name:
+                import urllib.request
+
+                full_url = self._resolve_image_url(image)
+                cache_root = QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.CacheLocation,
+                )
+                cache_dir = Path(cache_root) / "emoji"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                ext = Path(image).suffix or ".png"
+                dest = cache_dir / f"{name}{ext}"
+                try:
+                    await asyncio.to_thread(urllib.request.urlretrieve, full_url, dest)
+                    self._emoji_image_paths[name] = str(dest)
+                except Exception:
+                    log.debug("Failed to cache new emoji image %s", name)
+
             def _apply(e=event):  # noqa: ANN001
                 eid = getattr(e, "emoji_id", None)
                 if eid is not None:
@@ -779,6 +851,7 @@ class AppState(QObject):
                         emoji_id=eid,
                         name=getattr(e, "name", ""),
                         creator_id=getattr(e, "creator_id", 0),
+                        image=getattr(e, "image", None),
                     )
                 self.emoji_changed.emit()
             self._run_on_main.emit(_apply)
@@ -798,7 +871,11 @@ class AppState(QObject):
             def _apply(e=event):  # noqa: ANN001
                 eid = getattr(e, "emoji_id", None)
                 if eid is not None:
-                    self._emoji.pop(eid, None)
+                    removed = self._emoji.pop(eid, None)
+                    if removed:
+                        path = self._emoji_image_paths.pop(removed.name, None)
+                        if path:
+                            Path(path).unlink(missing_ok=True)
                 self.emoji_changed.emit()
             self._run_on_main.emit(_apply)
 
