@@ -166,6 +166,7 @@ class EmojiPicker(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(2)
 
+        state = AppState.instance()
         for i, em in enumerate(custom):
             btn = QPushButton()
             btn.setFixedSize(_CELL, _CELL)
@@ -175,18 +176,36 @@ class EmojiPicker(QWidget):
             grid.addWidget(btn, i // _COLS, i % _COLS)
             self._custom_buttons.append(btn)
 
-            # Load image if available
-            if em.image:
-                self._load_custom_image(btn, em.image)
+            # Load from local cache first, fall back to network
+            local_path = state.get_emoji_image_path(em.name)
+            if local_path:
+                self._load_local_image(btn, local_path)
+            elif em.image:
+                self._load_custom_image(btn, state._resolve_image_url(em.image))
 
         self._custom_layout.addWidget(grid_w)
+
+    def _load_local_image(self, btn: QPushButton, path: str) -> None:
+        """Load an emoji image from a local cached file."""
+        from PyQt6.QtGui import QIcon
+        pm = QPixmap(path)
+        if not pm.isNull():
+            scaled = pm.scaled(
+                _EMOJI_FONT_PX * 2, _EMOJI_FONT_PX * 2,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled.setDevicePixelRatio(2)
+            btn.setIcon(QIcon(scaled))
+            btn.setIconSize(QSize(_EMOJI_FONT_PX, _EMOJI_FONT_PX))
 
     def _load_custom_image(self, btn: QPushButton, url: str) -> None:
         if url in self._pixmap_cache:
             btn.setIcon(self._pixmap_cache[url])
             btn.setIconSize(QSize(_EMOJI_FONT_PX, _EMOJI_FONT_PX))
             return
-        req = QNetworkRequest(url)
+        from PyQt6.QtCore import QUrl
+        req = QNetworkRequest(QUrl(url))
         reply = self._nam.get(req)
         reply.finished.connect(lambda r=reply, b=btn, u=url: self._on_image_loaded(r, b, u))
 
@@ -250,6 +269,7 @@ class EmojiPicker(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(2)
 
+        state = AppState.instance()
         idx = 0
         for em in custom_matches:
             btn = QPushButton()
@@ -258,8 +278,11 @@ class EmojiPicker(QWidget):
             btn.setToolTip(f":{em.name}:")
             btn.clicked.connect(lambda checked, n=em.name: self.emoji_selected.emit(f":{n}:"))
             grid.addWidget(btn, idx // _COLS, idx % _COLS)
-            if em.image:
-                self._load_custom_image(btn, em.image)
+            local_path = state.get_emoji_image_path(em.name)
+            if local_path:
+                self._load_local_image(btn, local_path)
+            elif em.image:
+                self._load_custom_image(btn, state._resolve_image_url(em.image))
             idx += 1
 
         for entry in results:
@@ -279,7 +302,10 @@ class EmojiPicker(QWidget):
     def _scroll_to_category(self, category: str) -> None:
         lbl = self._category_labels.get(category)
         if lbl:
-            self._scroll.ensureWidgetVisible(lbl, 0, 0)
+            # Map the label's position to the scroll content widget and scroll
+            # so it appears at the top of the viewport.
+            pos = lbl.mapTo(self._grid_container, lbl.rect().topLeft())
+            self._scroll.verticalScrollBar().setValue(pos.y())
 
     def show_at(self, global_pos) -> None:
         """Position the picker above the given global point, clamped to screen."""
