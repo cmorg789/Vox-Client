@@ -27,14 +27,40 @@ from qasync import asyncSlot
 
 from vox_sdk.errors import VoxHTTPError
 from vox_sdk.permissions import (
+    ADD_REACTIONS,
     ADMINISTRATOR,
+    ATTACH_FILES,
     BAN_MEMBERS,
+    CHANGE_NICKNAME,
+    CONNECT,
+    CREATE_INVITES,
+    CREATE_THREADS,
+    DEAFEN_MEMBERS,
     KICK_MEMBERS,
+    MANAGE_2FA,
+    MANAGE_EMOJI,
     MANAGE_MESSAGES,
+    MANAGE_NICKNAMES,
+    MANAGE_REPORTS,
     MANAGE_ROLES,
     MANAGE_SERVER,
     MANAGE_SPACES,
+    MANAGE_THREADS,
+    MANAGE_WEBHOOKS,
+    MENTION_EVERYONE,
+    MOVE_MEMBERS,
+    MUTE_MEMBERS,
+    PRIORITY_SPEAKER,
+    READ_HISTORY,
+    SEND_EMBEDS,
+    SEND_IN_THREADS,
     SEND_MESSAGES,
+    SPEAK,
+    STAGE_MODERATOR,
+    STREAM,
+    VIDEO,
+    VIEW_AUDIT_LOG,
+    VIEW_REPORTS,
     VIEW_SPACE,
 )
 
@@ -653,73 +679,41 @@ class _OverviewPage(QWidget):
 # -- Roles Page --------------------------------------------------------------
 
 
-class _RoleItem(QWidget):
-    """Single role row in the scrollable list."""
-
-    selected = pyqtSignal(int)
+class _RoleButton(QPushButton):
+    """Selectable role button in the left list, matching channel settings style."""
 
     def __init__(self, role_id: int, name: str, color_int: int | None) -> None:
-        super().__init__()
+        super().__init__(name)
         self.role_id = role_id
-        self._active = False
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(32)
-
         c = AppState.instance().theme.colors
-        self._colors = c
-        self._hex_color = role_color_for_int(color_int) or c.text_dim
-
-        row = QHBoxLayout(self)
-        row.setContentsMargins(10, 4, 10, 4)
-        row.setSpacing(10)
-
-        # Color dot
-        self._dot = QLabel("\u25cf")
-        self._dot.setFixedWidth(14)
-        self._dot.setStyleSheet(
-            f"color: {self._hex_color}; font-size: 14px; border: none;"
+        text_color = role_color_for_int(color_int) if color_int else c.text_secondary
+        self.setFixedHeight(28)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(
+            f"QPushButton {{ text-align: left; padding: 0 10px; font-size: 12px; "
+            f"color: {text_color}; border: none; border-radius: 3px; "
+            f"background: transparent; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
-        row.addWidget(self._dot)
-
-        self._label = QLabel(name)
-        self._label.setStyleSheet(
-            f"color: {c.text_secondary}; font-size: 12px; border: none;"
-        )
-        row.addWidget(self._label, stretch=1)
-
-        self._update_style()
 
     def set_active(self, active: bool) -> None:
-        self._active = active
-        self._update_style()
-
-    def _update_style(self) -> None:
-        c = self._colors
-        if self._active:
-            self.setStyleSheet(f"background-color: {c.bg_active}; border-radius: 4px;")
-            self._label.setStyleSheet(
-                f"color: {c.text_primary}; font-size: 12px; border: none;"
+        c = AppState.instance().theme.colors
+        if active:
+            self.setStyleSheet(
+                f"QPushButton {{ text-align: left; padding: 0 10px; font-size: 12px; "
+                f"color: {c.text_primary}; border: none; border-radius: 3px; "
+                f"background-color: {c.bg_active}; font-weight: 600; }}"
             )
         else:
-            self.setStyleSheet("background: transparent; border-radius: 4px;")
-            self._label.setStyleSheet(
-                f"color: {c.text_secondary}; font-size: 12px; border: none;"
+            state = AppState.instance()
+            role = state._roles.get(self.role_id)
+            text_color = role_color_for_int(role.color) if role and role.color else c.text_secondary
+            self.setStyleSheet(
+                f"QPushButton {{ text-align: left; padding: 0 10px; font-size: 12px; "
+                f"color: {text_color}; border: none; border-radius: 3px; "
+                f"background: transparent; }}"
+                f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
             )
-
-    def enterEvent(self, event) -> None:  # noqa: ANN001
-        if not self._active:
-            c = self._colors
-            self.setStyleSheet(f"background-color: {c.bg_hover}; border-radius: 4px;")
-            self._label.setStyleSheet(
-                f"color: {c.text_primary}; font-size: 12px; border: none;"
-            )
-
-    def leaveEvent(self, event) -> None:  # noqa: ANN001
-        if not self._active:
-            self._update_style()
-
-    def mousePressEvent(self, event) -> None:  # noqa: ANN001
-        self.selected.emit(self.role_id)
 
 
 class _RoleEditPanel(QWidget):
@@ -734,7 +728,7 @@ class _RoleEditPanel(QWidget):
         self._role_id: int | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 0, 0, 0)
+        layout.setContentsMargins(12, 0, 0, 0)
         layout.setSpacing(4)
 
         # Empty state
@@ -775,7 +769,7 @@ class _RoleEditPanel(QWidget):
 
         form_layout.addWidget(section_label("PERMISSIONS", top_pad=12))
 
-        # Permission grid (2 columns)
+        # Single-column permission rows inside a scroll area
         self._perm_checks: dict[str, tuple[QCheckBox, int]] = {}
         perms_list = [
             ("Administrator", ADMINISTRATOR),
@@ -783,40 +777,80 @@ class _RoleEditPanel(QWidget):
             ("Manage Roles", MANAGE_ROLES),
             ("Manage Spaces", MANAGE_SPACES),
             ("Manage Messages", MANAGE_MESSAGES),
+            ("Manage Emoji", MANAGE_EMOJI),
+            ("Manage Webhooks", MANAGE_WEBHOOKS),
+            ("Manage Nicknames", MANAGE_NICKNAMES),
+            ("Manage 2FA", MANAGE_2FA),
+            ("Manage Reports", MANAGE_REPORTS),
             ("Kick Members", KICK_MEMBERS),
             ("Ban Members", BAN_MEMBERS),
-            ("Send Messages", SEND_MESSAGES),
             ("View Spaces", VIEW_SPACE),
+            ("Send Messages", SEND_MESSAGES),
+            ("Send Embeds", SEND_EMBEDS),
+            ("Attach Files", ATTACH_FILES),
+            ("Add Reactions", ADD_REACTIONS),
+            ("Read History", READ_HISTORY),
+            ("Mention Everyone", MENTION_EVERYONE),
+            ("Create Invites", CREATE_INVITES),
+            ("Change Nickname", CHANGE_NICKNAME),
+            ("View Audit Log", VIEW_AUDIT_LOG),
+            ("View Reports", VIEW_REPORTS),
+            ("Connect", CONNECT),
+            ("Speak", SPEAK),
+            ("Video", VIDEO),
+            ("Stream", STREAM),
+            ("Priority Speaker", PRIORITY_SPEAKER),
+            ("Stage Moderator", STAGE_MODERATOR),
+            ("Mute Members", MUTE_MEMBERS),
+            ("Deafen Members", DEAFEN_MEMBERS),
+            ("Move Members", MOVE_MEMBERS),
+            ("Create Threads", CREATE_THREADS),
+            ("Manage Threads", MANAGE_THREADS),
+            ("Send in Threads", SEND_IN_THREADS),
         ]
-        perm_grid = QWidget()
-        perm_grid.setStyleSheet("border: none;")
-        grid_outer = QVBoxLayout(perm_grid)
-        grid_outer.setContentsMargins(0, 0, 0, 0)
-        grid_outer.setSpacing(2)
 
-        # Lay out in 2-column rows
-        for i in range(0, len(perms_list), 2):
-            row_w = QHBoxLayout()
-            row_w.setSpacing(16)
-            for j in range(2):
-                if i + j < len(perms_list):
-                    label, bit = perms_list[i + j]
-                    cb = QCheckBox(label)
-                    cb.setStyleSheet(
-                        f"QCheckBox {{ color: {c.text_secondary}; font-size: 11px; "
-                        f"border: none; spacing: 6px; }}"
-                        f"QCheckBox::indicator {{ width: 16px; height: 16px; "
-                        f"border: 1px solid {c.border_bright}; border-radius: 3px; "
-                        f"background: {c.bg_panel}; }}"
-                        f"QCheckBox::indicator:checked {{ background: {c.accent_dim}; "
-                        f"border-color: {c.accent}; }}"
-                    )
-                    row_w.addWidget(cb)
-                    self._perm_checks[label] = (cb, bit)
-            row_w.addStretch()
-            grid_outer.addLayout(row_w)
+        perm_scroll = QScrollArea()
+        perm_scroll.setWidgetResizable(True)
+        perm_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        perm_scroll.setStyleSheet(
+            f"QScrollArea {{ border: none; background: transparent; }}"
+            f"QScrollBar:vertical {{ width: 6px; background: transparent; }}"
+            f"QScrollBar::handle:vertical {{ background: {c.accent_dim}; "
+            f"border-radius: 3px; min-height: 20px; }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
+        )
+        perm_container = QWidget()
+        perm_container.setStyleSheet("background: transparent; border: none;")
+        perm_layout = QVBoxLayout(perm_container)
+        perm_layout.setContentsMargins(0, 0, 0, 0)
+        perm_layout.setSpacing(2)
 
-        form_layout.addWidget(perm_grid)
+        for label, bit in perms_list:
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            perm_label = QLabel(label)
+            perm_label.setFixedWidth(130)
+            perm_label.setStyleSheet(
+                f"color: {c.text_secondary}; font-size: 11px; border: none;"
+            )
+            row.addWidget(perm_label)
+            cb = QCheckBox()
+            cb.setStyleSheet(
+                f"QCheckBox {{ border: none; spacing: 4px; }}"
+                f"QCheckBox::indicator {{ width: 16px; height: 16px; "
+                f"border: 1px solid {c.border_bright}; border-radius: 3px; "
+                f"background: {c.bg_input}; }}"
+                f"QCheckBox::indicator:checked {{ background: {c.accent_dim}; "
+                f"border-color: {c.accent}; }}"
+            )
+            row.addWidget(cb)
+            row.addStretch()
+            perm_layout.addLayout(row)
+            self._perm_checks[label] = (cb, bit)
+
+        perm_layout.addStretch()
+        perm_scroll.setWidget(perm_container)
+        form_layout.addWidget(perm_scroll, stretch=1)
 
         form_layout.addSpacing(8)
         self._status = status_label()
@@ -833,7 +867,6 @@ class _RoleEditPanel(QWidget):
         btn_row.addWidget(self._delete_btn)
         form_layout.addLayout(btn_row)
 
-        form_layout.addStretch()
         self._form.hide()
         layout.addWidget(self._form, stretch=1)
 
@@ -949,30 +982,61 @@ class _RolesPage(QWidget):
         self._create_status = status_label()
         self._create_status.setFixedWidth(80)
         top_row.addWidget(self._create_status)
-        self._create_btn = action_button("[ + NEW ]", width=90)
-        self._create_btn.clicked.connect(self._on_create)
-        top_row.addWidget(self._create_btn)
         layout.addLayout(top_row)
 
         layout.addSpacing(4)
 
-        # Split: role list on the left | edit panel on the right
+        # Split: role list on the left | separator | edit panel on the right
         split = QHBoxLayout()
         split.setSpacing(0)
 
-        # Left: role list in scroll area
-        left = QWidget()
-        left.setFixedWidth(170)
-        left.setStyleSheet(f"background-color: {c.bg_panel}; border-radius: 6px;")
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(4, 6, 4, 6)
-        left_layout.setSpacing(0)
+        # Left: role list in scroll area + new button at bottom
+        left_panel = QWidget()
+        left_panel.setFixedWidth(160)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 8, 0)
+        left_layout.setSpacing(2)
 
-        self._role_scroll, self._role_list_container, self._role_list_layout = (
-            _make_scroll_area()
+        role_scroll = QScrollArea()
+        role_scroll.setWidgetResizable(True)
+        role_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        role_scroll.setStyleSheet(
+            f"QScrollArea {{ border: none; background: transparent; }}"
+            f"QScrollBar:vertical {{ width: 6px; background: transparent; }}"
+            f"QScrollBar::handle:vertical {{ background: {c.accent_dim}; "
+            f"border-radius: 3px; min-height: 20px; }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
         )
-        left_layout.addWidget(self._role_scroll)
-        split.addWidget(left)
+        role_container = QWidget()
+        role_container.setStyleSheet("background: transparent; border: none;")
+        self._role_list_layout = QVBoxLayout(role_container)
+        self._role_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._role_list_layout.setSpacing(1)
+        self._role_list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        role_scroll.setWidget(role_container)
+        left_layout.addWidget(role_scroll, stretch=1)
+
+        self._create_btn = QPushButton("[ + NEW ]")
+        self._create_btn.setFixedHeight(30)
+        self._create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._create_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: 1px solid {c.border}; "
+            f"color: {c.text_secondary}; border-radius: 4px; font-size: 12px; font-weight: 500; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; "
+            f"border-color: {c.border_bright}; color: {c.text_primary}; }}"
+            f"QPushButton:pressed {{ background-color: {c.bg_active}; }}"
+            f"QPushButton:disabled {{ color: {c.text_dim}; border-color: {c.border}; }}"
+        )
+        self._create_btn.clicked.connect(self._on_create)
+        left_layout.addWidget(self._create_btn)
+
+        split.addWidget(left_panel)
+
+        # Vertical separator
+        sep = QWidget()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet(f"background-color: {c.border};")
+        split.addWidget(sep)
 
         # Right: edit panel
         self._edit_panel = _RoleEditPanel()
@@ -982,29 +1046,29 @@ class _RolesPage(QWidget):
 
         layout.addLayout(split, stretch=1)
 
-        self._role_items: list[_RoleItem] = []
+        self._role_buttons: list[_RoleButton] = []
         self._active_role_id: int | None = None
         self._refresh_list()
 
     def _refresh_list(self) -> None:
-        for item in self._role_items:
-            item.deleteLater()
-        self._role_items.clear()
+        for btn in self._role_buttons:
+            btn.deleteLater()
+        self._role_buttons.clear()
 
         state = AppState.instance()
         roles = sorted(state._roles.values(), key=lambda r: r.position, reverse=True)
         for role in roles:
-            item = _RoleItem(role.role_id, role.name, role.color)
-            item.selected.connect(self._on_role_clicked)
-            self._role_list_layout.addWidget(item)
-            self._role_items.append(item)
+            btn = _RoleButton(role.role_id, role.name, role.color)
+            btn.clicked.connect(lambda checked, rid=role.role_id: self._on_role_clicked(rid))
+            self._role_list_layout.addWidget(btn)
+            self._role_buttons.append(btn)
             if role.role_id == self._active_role_id:
-                item.set_active(True)
+                btn.set_active(True)
 
     def _on_role_clicked(self, role_id: int) -> None:
         self._active_role_id = role_id
-        for item in self._role_items:
-            item.set_active(item.role_id == role_id)
+        for btn in self._role_buttons:
+            btn.set_active(btn.role_id == role_id)
         self._edit_panel.load_role(role_id)
 
     def _on_role_deleted(self) -> None:
