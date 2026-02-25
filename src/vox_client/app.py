@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtGui import QFontDatabase, QIcon
 from PyQt6.QtWidgets import QApplication
 
-from vox_client._frozen import FONTS_DIR as _FONTS_DIR
+from vox_client._frozen import APP_ICON as _APP_ICON, FONTS_DIR as _FONTS_DIR
 from vox_client.state import AppState
 from vox_client.theme import Theme, load_saved_flavor
 from vox_client.views.main_window import MainWindow
@@ -43,6 +43,10 @@ class VoxApp:
         log.info("Applying theme flavor: %s", flavor)
         state.theme = Theme(flavor)
         self.qt_app.setStyleSheet(state.theme.generate_qss())
+
+        # Application icon
+        if _APP_ICON.exists():
+            self.qt_app.setWindowIcon(QIcon(str(_APP_ICON)))
 
         # Re-apply QSS when theme changes
         state.theme_changed.connect(self._on_theme_changed)

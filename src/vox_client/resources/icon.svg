@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Background: Catppuccin Mocha Base rounded rectangle -->
+  <rect width="256" height="256" rx="48" ry="48" fill="#1e1e2e"/>
+  <!-- Speech bubble in Catppuccin Mocha Mauve -->
+  <path d="M64,56 h128 a20,20 0 0 1 20,20 v80 a20,20 0 0 1 -20,20 h-96 l-28,28 v-28 h-4 a20,20 0 0 1 -20,-20 v-80 a20,20 0 0 1 20,-20 z" fill="#cba6f7"/>
+  <!-- Sound wave arcs (3 arcs) in Base color for contrast -->
+  <g fill="none" stroke="#1e1e2e" stroke-width="8" stroke-linecap="round">
+    <path d="M112,106 a16,16 0 0 1 0,24"/>
+    <path d="M124,94 a32,32 0 0 1 0,48"/>
+    <path d="M136,82 a48,48 0 0 1 0,72"/>
+  </g>
+</svg>
