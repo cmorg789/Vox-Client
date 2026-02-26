@@ -287,6 +287,7 @@ class DMSidebar(QFrame):
 
         # Live updates
         state.dm_list_changed.connect(self.refresh)
+        state.presence_updated.connect(lambda _: self.refresh())
 
     def restyle(self) -> None:
         c = AppState.instance().theme.colors
@@ -318,6 +319,8 @@ class DMSidebar(QFrame):
             item.set_active(item.dm_id == dm_id)
         self.dm_selected.emit(dm_id)
 
+    dm_closed = pyqtSignal(int)  # emits dm_id when the active DM is closed
+
     @asyncSlot()
     async def _on_close_dm(self, dm_id: int) -> None:
         state = AppState.instance()
@@ -326,9 +329,12 @@ class DMSidebar(QFrame):
         try:
             await state.client.dms.close(dm_id)
             state._dms.pop(dm_id, None)
-            if self._active_dm_id == dm_id:
+            was_active = self._active_dm_id == dm_id
+            if was_active:
                 self._active_dm_id = None
             state.dm_list_changed.emit()
+            if was_active:
+                self.dm_closed.emit(dm_id)
         except Exception:
             log.error("Failed to close DM %d", dm_id, exc_info=True)
 

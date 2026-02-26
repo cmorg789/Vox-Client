@@ -656,11 +656,13 @@ class MessageList(QScrollArea):
                 if edit_input is not None:
                     edit_input.deleteLater()
 
+        dm_id = self._current_dm_id
+        feed_id = self._current_feed_id
         try:
-            if self._current_dm_id is not None:
-                await state.client.dms.edit_message(self._current_dm_id, msg_id, new_text)
+            if dm_id is not None:
+                await state.client.dms.edit_message(dm_id, msg_id, new_text)
             else:
-                await state.client.messages.edit(self._current_feed_id, msg_id, new_text)
+                await state.client.messages.edit(feed_id, msg_id, new_text)
             # The gateway message_update event will refresh the label, but
             # update locally immediately for responsiveness.
             self._msg_bodies[msg_id] = new_text
@@ -696,11 +698,13 @@ class MessageList(QScrollArea):
         state = AppState.instance()
         if state.client is None:
             return
+        dm_id = self._current_dm_id
+        feed_id = self._current_feed_id
         try:
-            if self._current_dm_id is not None:
-                await state.client.dms.delete_message(self._current_dm_id, msg_id)
+            if dm_id is not None:
+                await state.client.dms.delete_message(dm_id, msg_id)
             else:
-                await state.client.messages.delete(self._current_feed_id, msg_id)
+                await state.client.messages.delete(feed_id, msg_id)
             # The gateway message_delete event will remove the widgets.
         except Exception:
             log.error("Failed to delete message %d", msg_id, exc_info=True)

@@ -181,6 +181,7 @@ class MainWindow(QMainWindow):
         # DM signals
         self._server_strip.dm_clicked.connect(self._on_dm_mode_enter)
         self._dm_sidebar.dm_selected.connect(self._on_dm_selected)
+        self._dm_sidebar.dm_closed.connect(self._on_dm_closed)
         self._state.dm_mode_changed.connect(self._on_dm_mode_changed)
         self._member_sidebar.send_message_requested.connect(self._on_member_send_message)
         self._member_sidebar.open_dm_requested.connect(self.open_dm_with_user)
@@ -530,11 +531,10 @@ class MainWindow(QMainWindow):
 
     @asyncSlot()
     async def _on_dm_mode_enter(self) -> None:
-        """Enter DM mode: load DM list and refresh sidebar."""
+        """Enter DM mode: load DM list (emits dm_list_changed → sidebar refreshes)."""
         state = self._state
         if state.client is not None:
             await state.load_dm_list()
-        self._dm_sidebar.refresh()
 
     def _on_dm_mode_changed(self, entering_dm: bool) -> None:
         """Switch between DM mode and server mode."""
@@ -566,6 +566,15 @@ class MainWindow(QMainWindow):
         except Exception:
             log.error("Failed to select DM %d", dm_id, exc_info=True)
 
+    def _on_dm_closed(self, dm_id: int) -> None:
+        """Clear chat area when the active DM is closed."""
+        state = self._state
+        if state.current_dm_id == dm_id:
+            state.current_dm_id = None
+            self._chat_header.clear()
+            self._chat_input.set_channel_name("")
+            self._message_list._clear()
+
     def open_dm_with_user(self, dm_id: int) -> None:
         """Switch to DM mode and select a specific conversation (used by member sidebar)."""
         state = self._state
@@ -574,6 +583,7 @@ class MainWindow(QMainWindow):
             state.dm_mode_changed.emit(True)
             self._server_strip._dm_active = True
             self._server_strip.populate()
+        self._dm_sidebar.refresh()
         self._dm_sidebar.select_dm(dm_id)
 
     @asyncSlot(int)

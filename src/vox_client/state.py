@@ -202,7 +202,7 @@ class AppState(QObject):
     def get_dm_partner_id(self, dm_id: int) -> int | None:
         """Return the other participant's user_id for a 1-on-1 DM."""
         dm = self._dms.get(dm_id)
-        if dm is None or dm.is_group:
+        if dm is None or dm.is_group or self.user_id is None:
             return None
         for uid in dm.participant_ids:
             if uid != self.user_id:
