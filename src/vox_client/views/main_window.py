@@ -6,6 +6,7 @@ import asyncio
 import asyncio.base_events
 import logging
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
@@ -177,6 +178,9 @@ class MainWindow(QMainWindow):
         self._state.typing_started.connect(self._on_remote_typing)
         self._state.presence_updated.connect(self._on_presence_updated)
         self._state.theme_changed.connect(self._on_theme_changed)
+
+        # Drag-and-drop: forward file drops from message list to chat input staging
+        self._message_list.file_dropped.connect(self._chat_input._stage_file)
 
         # DM signals
         self._server_strip.dm_clicked.connect(self._on_dm_mode_enter)
@@ -432,22 +436,65 @@ class MainWindow(QMainWindow):
         except Exception:
             log.error("Failed to disconnect from voice", exc_info=True)
 
-    @asyncSlot(str)
-    async def _on_send(self, text: str) -> None:
+    @asyncSlot(str, list)
+    async def _on_send(self, text: str, file_paths: list) -> None:
         if self._state.client is None:
             return
+
         dm_id = self._state.current_dm_id
+        feed_id = self._state.current_feed_id
+
+        # Upload attachments
+        file_ids: list[str] = []
+        for path in file_paths:
+            import mimetypes
+            mime, _ = mimetypes.guess_type(path)
+            mime = mime or "application/octet-stream"
+            filename = Path(path).name
+            try:
+                if dm_id is not None:
+                    resp = await self._state.client.files.upload_dm(
+                        dm_id, path, filename, mime,
+                    )
+                elif feed_id is not None:
+                    resp = await self._state.client.files.upload(
+                        feed_id, path, filename, mime,
+                    )
+                else:
+                    continue
+                file_ids.append(resp.file_id)
+            except Exception:
+                log.error("Failed to upload file %s", path, exc_info=True)
+
+        # Build optional kwargs
+        kwargs: dict = {}
+        if file_ids:
+            kwargs["attachments"] = file_ids
+
+        # Detect first URL in text for embed resolution
+        if text:
+            import re
+            urls = re.findall(r'https?://[^\s<>"\']+', text)
+            if urls:
+                kwargs["embed"] = urls[0]
+
         if dm_id is not None:
             try:
-                await self._state.client.dms.send_message(dm_id, body=text)
+                await self._state.client.dms.send_message(
+                    dm_id, body=text or None, **kwargs,
+                )
             except Exception:
                 log.error("Failed to send DM message to dm %d", dm_id, exc_info=True)
             return
-        feed_id = self._state.current_feed_id
         if feed_id is None:
             return
         try:
-            await self._state.client.messages.send(feed_id, body=text)
+            await self._state.client.messages.send(
+                feed_id,
+                body=text or None,
+                attachments=kwargs.get("attachments"),
+                embed=kwargs.get("embed"),
+            )
         except Exception:
             log.error("Failed to send message to feed %d", feed_id, exc_info=True)
 

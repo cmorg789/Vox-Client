@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QImage, QKeyEvent, QTextCursor, QTextImageFormat
+from PySide6.QtGui import QFontMetrics, QImage, QKeyEvent, QPixmap, QTextCursor, QTextImageFormat
 
 log = logging.getLogger(__name__)
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
@@ -25,6 +36,7 @@ class _RichInput(QTextEdit):
 
     returnPressed = Signal()
     textChanged_str = Signal(str)  # mirrors QLineEdit.textChanged(str)
+    image_pasted = Signal(object)  # emits QImage when user pastes an image
 
     _MAX_HEIGHT = 160
     _SINGLE_LINE = 32
@@ -121,6 +133,15 @@ class _RichInput(QTextEdit):
         fmt.setHeight(size)
         self.textCursor().insertImage(fmt)
 
+    def insertFromMimeData(self, source) -> None:  # noqa: ANN001, N802
+        """Intercept clipboard paste to detect pasted images."""
+        if source.hasImage():
+            image = source.imageData()
+            if image is not None and not image.isNull():
+                self.image_pasted.emit(image)
+                return
+        super().insertFromMimeData(source)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
@@ -132,13 +153,13 @@ class _RichInput(QTextEdit):
 class ChatInput(QFrame):
     """Bottom input bar: input field with [+] button inside, ↵ hint outside."""
 
-    message_sent = Signal(str)
+    message_sent = Signal(str, list)  # (text, file_paths)
     typing = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.setMinimumHeight(52)
-        self.setMaximumHeight(180)
+        self.setMaximumHeight(240)
 
         state = AppState.instance()
         c = state.theme.colors
@@ -149,8 +170,28 @@ class ChatInput(QFrame):
             f"border-top: 1px solid {c.border}; }}"
         )
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 12)
+        # Staged file attachments
+        self._staged_attachments: list[str] = []
+
+        # Outer vertical layout: preview strip (hidden) + input row
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 4, 8, 12)
+        outer.setSpacing(2)
+
+        # -- Attachment preview strip (hidden by default) --
+        self._preview_strip = QWidget()
+        self._preview_strip.setObjectName("PreviewStrip")
+        self._preview_layout = QHBoxLayout(self._preview_strip)
+        self._preview_layout.setContentsMargins(4, 4, 4, 0)
+        self._preview_layout.setSpacing(6)
+        self._preview_layout.addStretch()
+        self._preview_strip.hide()
+        outer.addWidget(self._preview_strip)
+
+        # -- Input row --
+        input_row = QWidget()
+        layout = QHBoxLayout(input_row)
+        layout.setContentsMargins(0, 4, 0, 0)
         layout.setSpacing(4)
 
         # Composite input: plus button + line edit in a shared border
@@ -174,6 +215,7 @@ class ChatInput(QFrame):
             f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
             f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
+        self._plus_btn.clicked.connect(self._on_plus_clicked)
         field_layout.addWidget(self._plus_btn)
 
         # Rich text input (borderless, bg matches parent)
@@ -185,7 +227,20 @@ class ChatInput(QFrame):
         )
         self._input.returnPressed.connect(self._on_send)
         self._input.textChanged_str.connect(self._on_text_changed)
+        self._input.image_pasted.connect(self._on_image_pasted)
         field_layout.addWidget(self._input, stretch=1)
+
+        # GIF button inside the field
+        self._gif_btn = QPushButton("GIF")
+        self._gif_btn.setFixedSize(30, 22)
+        self._gif_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._gif_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: 1px solid {c.text_dim}; "
+            f"border-radius: 4px; color: {c.text_dim}; font-size: 9px; font-weight: 700; }}"
+            f"QPushButton:hover {{ border-color: {c.text_primary}; color: {c.text_primary}; }}"
+        )
+        self._gif_btn.clicked.connect(self._on_gif_btn_clicked)
+        field_layout.addWidget(self._gif_btn)
 
         # Emoji button inside the field (right side)
         self._emoji_btn = QPushButton()
@@ -212,9 +267,12 @@ class ChatInput(QFrame):
         self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._hint)
 
-        # Lazy-created emoji widgets
+        outer.addWidget(input_row)
+
+        # Lazy-created emoji / GIF picker widgets
         self._emoji_picker = None
         self._emoji_completer = None
+        self._gif_picker = None
 
         # Create completer immediately so it can monitor typing
         self._ensure_completer()
@@ -284,6 +342,11 @@ class ChatInput(QFrame):
             f"background: transparent; color: {c.text_primary}; "
             f"border: none; padding: 4px 4px;"
         )
+        self._gif_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: 1px solid {c.text_dim}; "
+            f"border-radius: 4px; color: {c.text_dim}; font-size: 9px; font-weight: 700; }}"
+            f"QPushButton:hover {{ border-color: {c.text_primary}; color: {c.text_primary}; }}"
+        )
         self._emoji_btn.setIcon(tinted_icon(_ICONS_DIR / "emoticon-outline.svg", c.text_secondary))
         self._emoji_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
@@ -297,6 +360,8 @@ class ChatInput(QFrame):
             self._emoji_picker.restyle()
         if self._emoji_completer is not None:
             self._emoji_completer.restyle()
+        if self._gif_picker is not None:
+            self._gif_picker.restyle()
 
     def set_channel_name(self, name: str) -> None:
         self._input.setPlaceholderText(f"Message #{name}")
@@ -306,13 +371,142 @@ class ChatInput(QFrame):
 
     def _on_send(self) -> None:
         text = self._input.text().strip()
-        if text:
+        if text or self._staged_attachments:
             self._input.clear()
-            self.message_sent.emit(text)
+            paths = list(self._staged_attachments)
+            self._staged_attachments.clear()
+            self._clear_attachment_preview()
+            self.message_sent.emit(text, paths)
 
     def _on_text_changed(self) -> None:
         if self._input.text():
             self.typing.emit()
+
+    # -- file attachment staging -----------------------------------------------
+
+    def _on_plus_clicked(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Attach Files",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.webp);;All Files (*)",
+        )
+        for path in paths:
+            self._stage_file(path)
+
+    def _on_image_pasted(self, image: object) -> None:
+        """Handle an image pasted from the clipboard."""
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        image.save(tmp.name, "PNG")
+        self._stage_file(tmp.name)
+
+    def _stage_file(self, path: str) -> None:
+        """Add a file to the staged attachment list and show a preview chip."""
+        if path in self._staged_attachments:
+            return
+        self._staged_attachments.append(path)
+        self._add_preview_chip(path)
+        self._preview_strip.show()
+
+    def _add_preview_chip(self, path: str) -> None:
+        """Add a thumbnail chip to the preview strip."""
+        c = AppState.instance().theme.colors
+
+        chip = QFrame()
+        chip.setObjectName(f"chip_{id(chip)}")
+        chip.setFixedSize(80, 64)
+        chip.setStyleSheet(
+            f"QFrame {{ background: {c.bg_input}; border: 1px solid {c.border}; "
+            f"border-radius: 6px; }}"
+        )
+        chip_layout = QVBoxLayout(chip)
+        chip_layout.setContentsMargins(2, 2, 2, 2)
+        chip_layout.setSpacing(0)
+
+        # Close button
+        close_btn = QPushButton("\u00d7")
+        close_btn.setFixedSize(16, 16)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            f"QPushButton {{ background: {c.bg_hover}; color: {c.text_primary}; "
+            f"border: none; border-radius: 8px; font-size: 11px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {c.accent}; }}"
+        )
+        close_btn.clicked.connect(lambda: self._remove_staged(path, chip))
+        # Position close button in top-right
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(0, 0, 0, 0)
+        close_row.addStretch()
+        close_row.addWidget(close_btn)
+        chip_layout.addLayout(close_row)
+
+        # Thumbnail or filename
+        p = Path(path)
+        suffix = p.suffix.lower()
+        if suffix in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
+            pm = QPixmap(path)
+            if not pm.isNull():
+                thumb = QLabel()
+                scaled = pm.scaled(
+                    72, 38,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                thumb.setPixmap(scaled)
+                thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                thumb.setStyleSheet("border: none;")
+                chip_layout.addWidget(thumb)
+            else:
+                name_lbl = QLabel(p.name[:12])
+                name_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 9px; border: none;")
+                name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                chip_layout.addWidget(name_lbl)
+        else:
+            name_lbl = QLabel(p.name[:12])
+            name_lbl.setStyleSheet(f"color: {c.text_dim}; font-size: 9px; border: none;")
+            name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chip_layout.addWidget(name_lbl)
+
+        # Insert before the stretch at the end
+        count = self._preview_layout.count()
+        self._preview_layout.insertWidget(count - 1, chip)
+
+    def _remove_staged(self, path: str, chip: QWidget) -> None:
+        if path in self._staged_attachments:
+            self._staged_attachments.remove(path)
+        chip.deleteLater()
+        if not self._staged_attachments:
+            self._preview_strip.hide()
+
+    def _clear_attachment_preview(self) -> None:
+        while self._preview_layout.count() > 1:
+            item = self._preview_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+        self._preview_strip.hide()
+
+    # -- GIF picker ------------------------------------------------------------
+
+    def _on_gif_btn_clicked(self) -> None:
+        self._ensure_gif_picker()
+        assert self._gif_picker is not None
+        if self._gif_picker.isVisible():
+            self._gif_picker.hide()
+            return
+        pos = self._gif_btn.mapToGlobal(self._gif_btn.rect().center())
+        self._gif_picker.show_at(pos)
+
+    def _ensure_gif_picker(self) -> None:
+        if self._gif_picker is None:
+            from vox_client.widgets.gif_picker import GifPicker
+
+            self._gif_picker = GifPicker()
+            self._gif_picker.gif_selected.connect(self._on_gif_selected)
+
+    def _on_gif_selected(self, gif_url: str) -> None:
+        if self._gif_picker is not None:
+            self._gif_picker.hide()
+        self.message_sent.emit(gif_url, [])
 
     def focus_input(self) -> None:
         self._input.setFocus()
