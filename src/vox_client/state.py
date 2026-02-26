@@ -10,6 +10,7 @@ import sys
 from PyQt6.QtCore import QObject, QStandardPaths, QTimer, pyqtSignal
 
 from vox_sdk import Client, GatewayClient
+from vox_sdk.models.dms import DMResponse
 from vox_sdk.models.emoji import EmojiResponse
 from vox_sdk.models.members import MemberResponse
 from vox_sdk.models.roles import RoleResponse
@@ -60,6 +61,12 @@ class AppState(QObject):
     # Emoji signals
     emoji_changed = pyqtSignal()
 
+    # DM signals
+    dm_created = pyqtSignal(object)
+    dm_updated = pyqtSignal(object)
+    dm_list_changed = pyqtSignal()
+    dm_mode_changed = pyqtSignal(bool)  # True = entering DM mode
+
     # UI signals
     layout_loaded = pyqtSignal()
     layout_changed = pyqtSignal()
@@ -76,11 +83,16 @@ class AppState(QObject):
         self.gateway: GatewayClient | None = None
         self.user_id: int | None = None
         self.current_feed_id: int | None = None
+        self.current_dm_id: int | None = None
         self.theme: Theme | None = None
 
         # Server name / icon from server.info()
         self.server_name: str = ""
         self.server_icon: str | None = None
+
+        # DM state
+        self._dms: dict[int, DMResponse] = {}
+        self._dm_mode: bool = False
 
         # Caches
         self._members: dict[int, MemberResponse] = {}
@@ -184,6 +196,40 @@ class AppState(QObject):
 
     def is_speaking(self, user_id: int) -> bool:
         return user_id in self._speaking_users
+
+    # -- DM helpers ----------------------------------------------------------
+
+    def get_dm_partner_id(self, dm_id: int) -> int | None:
+        """Return the other participant's user_id for a 1-on-1 DM."""
+        dm = self._dms.get(dm_id)
+        if dm is None or dm.is_group or self.user_id is None:
+            return None
+        for uid in dm.participant_ids:
+            if uid != self.user_id:
+                return uid
+        return None
+
+    def get_dm_display_name(self, dm_id: int) -> str:
+        """Return the display name for a DM conversation."""
+        dm = self._dms.get(dm_id)
+        if dm is None:
+            return str(dm_id)
+        if dm.is_group and dm.name:
+            return dm.name
+        partner_id = self.get_dm_partner_id(dm_id)
+        if partner_id is not None:
+            return self.get_display_name(partner_id)
+        return str(dm_id)
+
+    async def load_dm_list(self) -> None:
+        """Fetch DMs via client.dms.list() and populate the _dms cache."""
+        assert self.client is not None
+        try:
+            resp = await self.client.dms.list()
+            self._dms = {dm.dm_id: dm for dm in resp.items}
+            self.dm_list_changed.emit()
+        except Exception:
+            log.error("Failed to load DM list", exc_info=True)
 
     # -- voice ---------------------------------------------------------------
 
@@ -932,4 +978,56 @@ class AppState(QObject):
                                         "(token=%s, url=%s)", bool(token), self._media_url)
                 except Exception:
                     log.error("Failed to handle media_token_refresh", exc_info=True)
+            self._run_on_main.emit(_apply)
+
+        # -- DM gateway events --------------------------------------------------
+
+        @self.gateway.on("dm_create")
+        async def _on_dm_create(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                dm_id = getattr(e, "dm_id", None)
+                if dm_id is not None:
+                    self._dms[dm_id] = DMResponse(
+                        dm_id=dm_id,
+                        participant_ids=getattr(e, "participant_ids", []),
+                        is_group=getattr(e, "is_group", False),
+                        name=getattr(e, "name", None),
+                    )
+                self.dm_created.emit(e)
+                self.dm_list_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        @self.gateway.on("dm_update")
+        async def _on_dm_update(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                dm_id = getattr(e, "dm_id", None)
+                if dm_id is not None and dm_id in self._dms:
+                    extra = getattr(e, "extra", {})
+                    self._dms[dm_id] = self._dms[dm_id].model_copy(update=extra)
+                self.dm_updated.emit(e)
+                self.dm_list_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        @self.gateway.on("dm_recipient_add")
+        async def _on_dm_recipient_add(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                dm_id = getattr(e, "dm_id", None)
+                uid = getattr(e, "user_id", None)
+                if dm_id and uid and dm_id in self._dms:
+                    dm = self._dms[dm_id]
+                    if uid not in dm.participant_ids:
+                        dm.participant_ids.append(uid)
+                self.dm_list_changed.emit()
+            self._run_on_main.emit(_apply)
+
+        @self.gateway.on("dm_recipient_remove")
+        async def _on_dm_recipient_remove(event):  # noqa: ANN001
+            def _apply(e=event):  # noqa: ANN001
+                dm_id = getattr(e, "dm_id", None)
+                uid = getattr(e, "user_id", None)
+                if dm_id and uid and dm_id in self._dms:
+                    dm = self._dms[dm_id]
+                    if uid in dm.participant_ids:
+                        dm.participant_ids.remove(uid)
+                self.dm_list_changed.emit()
             self._run_on_main.emit(_apply)

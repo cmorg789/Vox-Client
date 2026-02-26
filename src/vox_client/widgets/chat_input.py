@@ -301,6 +301,9 @@ class ChatInput(QFrame):
     def set_channel_name(self, name: str) -> None:
         self._input.setPlaceholderText(f"Message #{name}")
 
+    def set_dm_name(self, name: str) -> None:
+        self._input.setPlaceholderText(f"Message @{name}")
+
     def _on_send(self) -> None:
         text = self._input.text().strip()
         if text:
