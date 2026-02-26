@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 
@@ -73,7 +74,7 @@ class _IconButton(QWidget):
 
     clicked = pyqtSignal()
 
-    def __init__(self, icon_path: str) -> None:
+    def __init__(self, icon_path: Path) -> None:
         super().__init__()
         self._icon_path = icon_path
         self._active = False
@@ -170,7 +171,7 @@ class ServerStrip(QWidget):
                 child.widget().deleteLater()
 
         # DM button at the very top
-        dm_btn = _IconButton(str(_ICONS_DIR / "account-group.svg"))
+        dm_btn = _IconButton(_ICONS_DIR / "account-group.svg")
         dm_btn.clicked.connect(self._on_dm_clicked)
         dm_btn.set_active(self._dm_active)
         self._layout.addWidget(dm_btn)

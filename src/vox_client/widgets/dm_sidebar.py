@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -22,7 +21,13 @@ from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
 from vox_client.widgets.icons import tinted_icon
-from vox_client.widgets.ui_helpers import clear_layout
+from vox_client.widgets.ui_helpers import (
+    clear_layout,
+    close_button,
+    dialog_input,
+    dialog_status_label,
+    set_status,
+)
 
 log = logging.getLogger(__name__)
 
@@ -125,30 +130,33 @@ class NewDMDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("New Direct Message")
-        self.setFixedSize(320, 200)
-
         state = AppState.instance()
         c = state.theme.colors
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setFixedSize(280, 200)
         self.setStyleSheet(
-            f"background-color: {c.bg_panel}; color: {c.text_primary};"
+            f"background-color: {c.bg_panel}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 6px;"
         )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
 
-        header = QLabel("Find a user to message")
-        header.setStyleSheet(f"color: {c.text_primary}; font-size: 13px; font-weight: 600;")
-        layout.addWidget(header)
-
-        self._search = QLineEdit()
-        self._search.setPlaceholderText("Search by username...")
-        self._search.setFixedHeight(30)
-        self._search.setStyleSheet(
-            f"background-color: {c.bg_input}; color: {c.text_primary}; "
-            f"border: 1px solid {c.border}; border-radius: 4px; padding: 4px 8px;"
+        title_row = QHBoxLayout()
+        title_row.setSpacing(0)
+        title = QLabel("NEW MESSAGE")
+        title.setStyleSheet(
+            f"color: {c.text_dim}; font-size: 10px; font-weight: 600; "
+            f"letter-spacing: 1px; border: none;"
         )
+        title_row.addWidget(title)
+        title_row.addStretch()
+        title_row.addWidget(close_button(self.reject))
+        layout.addLayout(title_row)
+
+        self._search = dialog_input("search by username...")
         self._search.textChanged.connect(self._on_search_changed)
         layout.addWidget(self._search)
 
@@ -160,8 +168,7 @@ class NewDMDialog(QDialog):
 
         layout.addStretch()
 
-        self._status = QLabel("")
-        self._status.setStyleSheet(f"color: {c.text_dim}; font-size: 11px;")
+        self._status = dialog_status_label()
         layout.addWidget(self._status)
 
     def _on_search_changed(self, text: str) -> None:
@@ -197,7 +204,7 @@ class NewDMDialog(QDialog):
             self._results_layout.addWidget(btn)
 
         if not matches and query:
-            self._status.setText("No users found")
+            set_status(self._status, "No users found")
         else:
             self._status.setText("")
 
@@ -207,7 +214,7 @@ class NewDMDialog(QDialog):
         if state.client is None:
             return
         try:
-            self._status.setText("Opening DM...")
+            set_status(self._status, "opening...")
             dm = await state.client.dms.open(recipient_id=user_id)
             state._dms[dm.dm_id] = dm
             state.dm_list_changed.emit()
@@ -215,7 +222,7 @@ class NewDMDialog(QDialog):
             self.accept()
         except Exception:
             log.error("Failed to open DM with user %d", user_id, exc_info=True)
-            self._status.setText("Failed to open DM")
+            set_status(self._status, "Failed to open DM", "error")
 
     def keyPressEvent(self, event) -> None:  # noqa: ANN001
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
