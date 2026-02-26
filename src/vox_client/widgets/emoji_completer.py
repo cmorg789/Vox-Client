@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 import re
 
-from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QPixmap, QTextCursor
-from PyQt6.QtCore import QUrl
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QPixmap, QTextCursor
+from PySide6.QtCore import QUrl
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from vox_client.data import emoji_data
 from vox_client.state import AppState
@@ -23,7 +23,7 @@ _COLON_RE = re.compile(r":(\w{2,})$")
 class EmojiCompleter(QWidget):
     """Popup that suggests emoji as the user types :shortcodes."""
 
-    emoji_selected = pyqtSignal(str)  # emits Unicode char or :name: for custom
+    emoji_selected = Signal(str)  # emits Unicode char or :name: for custom
 
     def __init__(self, line_edit: QLineEdit | QWidget, parent: QWidget | None = None) -> None:
         super().__init__(

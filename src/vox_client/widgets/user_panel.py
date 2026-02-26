@@ -6,8 +6,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
@@ -18,7 +18,7 @@ from vox_client.widgets.icons import tinted_icon
 class VoiceStatusBar(QFrame):
     """Compact bar above the user panel showing voice connection status."""
 
-    disconnect_clicked = pyqtSignal()
+    disconnect_clicked = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -103,8 +103,8 @@ class UserPanel(QFrame):
     When not authenticated, shows a clickable "Log In" button instead.
     """
 
-    settings_clicked = pyqtSignal()
-    login_clicked = pyqtSignal()
+    settings_clicked = Signal()
+    login_clicked = Signal()
 
     def __init__(self) -> None:
         super().__init__()

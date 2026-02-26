@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PySide6.QtCore import QSize, Qt, Signal
 
 log = logging.getLogger(__name__)
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
@@ -18,7 +18,7 @@ from vox_client.widgets.icons import tinted_icon
 class _ServerButton(QWidget):
     """36x36 server icon button with a 3x20 accent indicator bar."""
 
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def __init__(self, label: str, server_id: int | None = None) -> None:
         super().__init__()
@@ -72,7 +72,7 @@ class _ServerButton(QWidget):
 class _IconButton(QWidget):
     """36x36 icon-based button with indicator bar, used for the DM button."""
 
-    clicked = pyqtSignal()
+    clicked = Signal()
 
     def __init__(self, icon_path: Path) -> None:
         super().__init__()
@@ -127,8 +127,8 @@ class _IconButton(QWidget):
 class ServerStrip(QWidget):
     """Vertical strip of server icons on the far left."""
 
-    server_selected = pyqtSignal(int)
-    dm_clicked = pyqtSignal()
+    server_selected = Signal(int)
+    dm_clicked = Signal()
 
     def __init__(self) -> None:
         super().__init__()

@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFontMetrics, QImage, QKeyEvent, QTextCursor, QTextImageFormat
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QFontMetrics, QImage, QKeyEvent, QTextCursor, QTextImageFormat
 
 log = logging.getLogger(__name__)
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QWidget
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
@@ -23,8 +23,8 @@ class _RichInput(QTextEdit):
     works without modification.
     """
 
-    returnPressed = pyqtSignal()
-    textChanged_str = pyqtSignal(str)  # mirrors QLineEdit.textChanged(str)
+    returnPressed = Signal()
+    textChanged_str = Signal(str)  # mirrors QLineEdit.textChanged(str)
 
     _MAX_HEIGHT = 160
     _SINGLE_LINE = 32
@@ -113,7 +113,7 @@ class _RichInput(QTextEdit):
         fm = QFontMetrics(self.font())
         size = fm.height()
         scaled = img.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        from PyQt6.QtCore import QUrl
+        from PySide6.QtCore import QUrl
         self.document().addResource(2, QUrl(res_name), scaled)  # 2 = QTextDocument.ResourceType.ImageResource
         fmt = QTextImageFormat()
         fmt.setName(res_name)
@@ -132,8 +132,8 @@ class _RichInput(QTextEdit):
 class ChatInput(QFrame):
     """Bottom input bar: input field with [+] button inside, ↵ hint outside."""
 
-    message_sent = pyqtSignal(str)
-    typing = pyqtSignal()
+    message_sent = Signal(str)
+    typing = Signal()
 
     def __init__(self) -> None:
         super().__init__()

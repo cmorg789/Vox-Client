@@ -36,7 +36,7 @@ def setup_logging(level: str | None = None, stderr: bool = False) -> None:
     when the resolved level is ``DEBUG``.
     """
     if level is None:
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
         settings = QSettings("Vox", "VoxClient")
         level = settings.value("logging/level", "INFO")
 

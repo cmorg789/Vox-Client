@@ -8,7 +8,7 @@ version = "0.1.0"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
-    "PyQt6>=6.8",
+    "PySide6>=6.8",
     "qasync>=0.27",
     "catppuccin==2.5",
     # vox-sdk and vox-media are published on PyPI.

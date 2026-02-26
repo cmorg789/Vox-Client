@@ -6,10 +6,10 @@ import logging
 
 import sys
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPixmap
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -45,7 +45,7 @@ def _emoji_font(px: int = _EMOJI_FONT_PX) -> QFont:
 class EmojiPicker(QWidget):
     """Popup grid of emoji with search and category tabs."""
 
-    emoji_selected = pyqtSignal(str)
+    emoji_selected = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent, Qt.WindowType.Popup)
@@ -187,7 +187,7 @@ class EmojiPicker(QWidget):
 
     def _load_local_image(self, btn: QPushButton, path: str) -> None:
         """Load an emoji image from a local cached file."""
-        from PyQt6.QtGui import QIcon
+        from PySide6.QtGui import QIcon
         pm = QPixmap(path)
         if not pm.isNull():
             scaled = pm.scaled(
@@ -204,7 +204,7 @@ class EmojiPicker(QWidget):
             btn.setIcon(self._pixmap_cache[url])
             btn.setIconSize(QSize(_EMOJI_FONT_PX, _EMOJI_FONT_PX))
             return
-        from PyQt6.QtCore import QUrl
+        from PySide6.QtCore import QUrl
         req = QNetworkRequest(QUrl(url))
         reply = self._nam.get(req)
         reply.finished.connect(lambda r=reply, b=btn, u=url: self._on_image_loaded(r, b, u))
@@ -221,7 +221,7 @@ class EmojiPicker(QWidget):
                 )
                 scaled.setDevicePixelRatio(2)
                 self._pixmap_cache[url] = scaled
-                from PyQt6.QtGui import QIcon
+                from PySide6.QtGui import QIcon
                 btn.setIcon(QIcon(scaled))
                 btn.setIconSize(QSize(_EMOJI_FONT_PX, _EMOJI_FONT_PX))
         reply.deleteLater()
@@ -309,7 +309,7 @@ class EmojiPicker(QWidget):
 
     def show_at(self, global_pos) -> None:
         """Position the picker above the given global point, clamped to screen."""
-        from PyQt6.QtGui import QGuiApplication
+        from PySide6.QtGui import QGuiApplication
 
         screen = QGuiApplication.screenAt(global_pos)
         if screen is None:

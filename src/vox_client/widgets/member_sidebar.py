@@ -6,8 +6,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from vox_client.state import AppState
 from vox_client.widgets.avatar import AvatarWidget
@@ -17,7 +17,7 @@ from vox_client.widgets.ui_helpers import clear_layout
 class _MemberItem(QWidget):
     """Single member entry with avatar, presence dot, name, and status text."""
 
-    send_message_requested = pyqtSignal(int)  # user_id
+    send_message_requested = Signal(int)  # user_id
 
     def __init__(self, user_id: int) -> None:
         super().__init__()
@@ -92,7 +92,7 @@ class _MemberItem(QWidget):
         if action is send_msg:
             self.send_message_requested.emit(self.user_id)
 
-    profile_dm_opened = pyqtSignal(int)  # dm_id from profile card
+    profile_dm_opened = Signal(int)  # dm_id from profile card
 
     def mousePressEvent(self, event) -> None:  # noqa: ANN001
         if event.button() == Qt.MouseButton.LeftButton:
@@ -105,8 +105,8 @@ class _MemberItem(QWidget):
 class MemberSidebar(QFrame):
     """Right panel listing members grouped by presence status."""
 
-    send_message_requested = pyqtSignal(int)  # user_id (from context menu)
-    open_dm_requested = pyqtSignal(int)       # dm_id (from profile card)
+    send_message_requested = Signal(int)  # user_id (from context menu)
+    open_dm_requested = Signal(int)       # dm_id (from profile card)
 
     def __init__(self) -> None:
         super().__init__()

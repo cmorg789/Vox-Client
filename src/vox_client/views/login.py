@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,

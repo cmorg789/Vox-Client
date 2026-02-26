@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
@@ -109,7 +109,7 @@ def _make_scroll_area() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
 class _InviteRow(QWidget):
     """Single invite row in the scrollable list."""
 
-    deleted = pyqtSignal(str)  # code
+    deleted = Signal(str)  # code
 
     def __init__(self, invite) -> None:  # noqa: ANN001
         super().__init__()
@@ -300,7 +300,7 @@ class _InvitesPage(QWidget):
 class _AssetRow(QWidget):
     """Single emoji or sticker row."""
 
-    deleted = pyqtSignal(int)  # asset id
+    deleted = Signal(int)  # asset id
 
     def __init__(
         self, asset_id: int, name: str, creator_id: int, asset_type: str
@@ -719,8 +719,8 @@ class _RoleButton(QPushButton):
 class _RoleEditPanel(QWidget):
     """Inline panel for editing a single role."""
 
-    role_saved = pyqtSignal()
-    role_deleted = pyqtSignal()
+    role_saved = Signal()
+    role_deleted = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -1232,7 +1232,7 @@ class _MemberRow(QWidget):
 class _RoleCheckRow(QWidget):
     """Single role checkbox row in the assign popup."""
 
-    toggled = pyqtSignal(int, bool)  # role_id, checked
+    toggled = Signal(int, bool)  # role_id, checked
 
     def __init__(
         self, role_id: int, name: str, color_int: int | None, checked: bool

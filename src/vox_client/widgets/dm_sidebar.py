@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -35,8 +35,8 @@ log = logging.getLogger(__name__)
 class _DMItem(QWidget):
     """Single DM conversation entry in the sidebar."""
 
-    clicked = pyqtSignal(int)
-    close_clicked = pyqtSignal(int)
+    clicked = Signal(int)
+    close_clicked = Signal(int)
 
     def __init__(self, dm_id: int) -> None:
         super().__init__()
@@ -126,7 +126,7 @@ class _DMItem(QWidget):
 class NewDMDialog(QDialog):
     """Simple dialog to search for a user and open a DM."""
 
-    dm_opened = pyqtSignal(int)  # emits dm_id
+    dm_opened = Signal(int)  # emits dm_id
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -233,7 +233,7 @@ class NewDMDialog(QDialog):
 class DMSidebar(QFrame):
     """180px sidebar showing DM conversations, replaces channel sidebar in DM mode."""
 
-    dm_selected = pyqtSignal(int)
+    dm_selected = Signal(int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -326,7 +326,7 @@ class DMSidebar(QFrame):
             item.set_active(item.dm_id == dm_id)
         self.dm_selected.emit(dm_id)
 
-    dm_closed = pyqtSignal(int)  # emits dm_id when the active DM is closed
+    dm_closed = Signal(int)  # emits dm_id when the active DM is closed
 
     @asyncSlot()
     async def _on_close_dm(self, dm_id: int) -> None:

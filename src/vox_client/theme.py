@@ -8,7 +8,7 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 from catppuccin import PALETTE
-from PyQt6.QtCore import QSettings
+from PySide6.QtCore import QSettings
 
 
 def _blend_hex(fg: str, bg: str, alpha: float) -> str:

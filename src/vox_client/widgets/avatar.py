@@ -6,10 +6,10 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QSize, Qt, QUrl
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
-from PyQt6.QtWidgets import QLabel
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtWidgets import QLabel
 
 from vox_client.state import AppState
 

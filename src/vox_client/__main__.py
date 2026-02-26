@@ -7,8 +7,8 @@ import asyncio
 import logging
 import sys
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 import qasync
 
 from vox_client.app import VoxApp
@@ -72,10 +72,10 @@ def main() -> None:
 
     # Warm up the multimedia backend so the first settings open isn't slow.
     # Deferred so it doesn't block window creation (can hang on some Linux setups).
-    from PyQt6.QtCore import QTimer
+    from PySide6.QtCore import QTimer
     def _warmup_multimedia() -> None:
         try:
-            from PyQt6.QtMultimedia import QMediaDevices
+            from PySide6.QtMultimedia import QMediaDevices
             QMediaDevices.audioInputs()
         except Exception:
             pass

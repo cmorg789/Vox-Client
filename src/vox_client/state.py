@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import sys
 
-from PyQt6.QtCore import QObject, QStandardPaths, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
 
 from vox_sdk import Client, GatewayClient
 from vox_sdk.models.dms import DMResponse
@@ -41,39 +41,39 @@ class AppState(QObject):
     """Singleton holding the SDK client, gateway, caches, and bridged signals."""
 
     # Gateway event signals (payload is the raw event dataclass)
-    message_received = pyqtSignal(object)
-    message_updated = pyqtSignal(object)
-    message_deleted = pyqtSignal(object)
-    presence_updated = pyqtSignal(object)
-    typing_started = pyqtSignal(object)
+    message_received = Signal(object)
+    message_updated = Signal(object)
+    message_deleted = Signal(object)
+    presence_updated = Signal(object)
+    typing_started = Signal(object)
 
     # Member lifecycle signals
-    member_joined = pyqtSignal(object)
-    member_left = pyqtSignal(object)
-    member_updated = pyqtSignal(object)
+    member_joined = Signal(object)
+    member_left = Signal(object)
+    member_updated = Signal(object)
 
     # Voice signals
-    voice_state_changed = pyqtSignal()       # join/leave/members updated
-    voice_connection_error = pyqtSignal(str)  # join failure message
-    voice_media_event = pyqtSignal(str, str)  # (event_type, detail) from media client
-    speaking_changed = pyqtSignal(int, bool)  # (user_id, is_speaking)
+    voice_state_changed = Signal()       # join/leave/members updated
+    voice_connection_error = Signal(str)  # join failure message
+    voice_media_event = Signal(str, str)  # (event_type, detail) from media client
+    speaking_changed = Signal(int, bool)  # (user_id, is_speaking)
 
     # Emoji signals
-    emoji_changed = pyqtSignal()
+    emoji_changed = Signal()
 
     # DM signals
-    dm_created = pyqtSignal(object)
-    dm_updated = pyqtSignal(object)
-    dm_list_changed = pyqtSignal()
-    dm_mode_changed = pyqtSignal(bool)  # True = entering DM mode
+    dm_created = Signal(object)
+    dm_updated = Signal(object)
+    dm_list_changed = Signal()
+    dm_mode_changed = Signal(bool)  # True = entering DM mode
 
     # UI signals
-    layout_loaded = pyqtSignal()
-    layout_changed = pyqtSignal()
-    theme_changed = pyqtSignal()
+    layout_loaded = Signal()
+    layout_changed = Signal()
+    theme_changed = Signal()
 
     # Thread bridge: carries a callable to execute on the main thread
-    _run_on_main = pyqtSignal(object)
+    _run_on_main = Signal(object)
 
     _instance: AppState | None = None
 
@@ -311,7 +311,7 @@ class AppState(QObject):
                 mc.set_mute(self.voice_self_mute)
                 mc.set_deaf(self.voice_self_deaf)
                 # Apply saved AV settings
-                from PyQt6.QtCore import QSettings
+                from PySide6.QtCore import QSettings
                 settings = QSettings("Vox", "VoxClient")
                 input_vol = settings.value("av/input_volume", 100, type=int)
                 output_vol = settings.value("av/output_volume", 100, type=int)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtGui import QFontDatabase
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtGui import QFontDatabase
+from PySide6.QtWidgets import QApplication
 
 from vox_client._frozen import FONTS_DIR as _FONTS_DIR
 from vox_client.state import AppState

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qasync import asyncSlot
 
 from vox_client.state import AppState
@@ -22,7 +22,7 @@ class UserProfileCard(QWidget):
     "Message" button that opens/creates a DM.
     """
 
-    message_clicked = pyqtSignal(int)  # emits dm_id
+    message_clicked = Signal(int)  # emits dm_id
 
     def __init__(self, user_id: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)

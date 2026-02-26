@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import Qt
+from PySide6.QtCore import Qt
 
 log = logging.getLogger(__name__)
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel
 
 from vox_client.state import AppState
 

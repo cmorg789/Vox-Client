@@ -7,9 +7,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 
 def tinted_icon(svg_path: Path, color: str, size: int = 16) -> QIcon:

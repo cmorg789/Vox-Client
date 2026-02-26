@@ -7,8 +7,8 @@ import asyncio.base_events
 import logging
 import threading
 
-from PyQt6.QtCore import QSettings, Qt, QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
 from qasync import asyncSlot
 
 from vox_sdk import Client
@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
         lbl.setStyleSheet(f"color: {c.bg_deep}; font-size: 11px; border: none;")
         lay.addWidget(lbl, stretch=1)
 
-        from PyQt6.QtWidgets import QPushButton
+        from PySide6.QtWidgets import QPushButton
 
         retry_btn = QPushButton("[ RETRY ]")
         retry_btn.setFixedHeight(22)

@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 # %-d is POSIX-only; Windows uses %#d for no-padding day
 _DATE_FMT = "%B %#d, %Y" if sys.platform == "win32" else "%B %-d, %Y"
 
-from PyQt6 import sip
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtWidgets import (
+import shiboken6
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -89,8 +89,8 @@ class _EditTextEdit(QTextEdit):
     Accepts only plain text and auto-sizes to fit content.
     """
 
-    cancelled = pyqtSignal()
-    submitted = pyqtSignal()
+    cancelled = Signal()
+    submitted = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -472,7 +472,7 @@ class MessageList(QScrollArea):
             if msg_id is None or msg_id not in self._msg_widgets:
                 return
             widget = self._msg_widgets[msg_id]
-            if sip.isdeleted(widget):
+            if not shiboken6.isValid(widget):
                 self._msg_widgets.pop(msg_id, None)
                 return
             body = getattr(event, "body", None) or ""
@@ -495,7 +495,7 @@ class MessageList(QScrollArea):
             if msg_id is None or msg_id not in self._msg_rows:
                 return
             for widget in self._msg_rows.pop(msg_id):
-                if not sip.isdeleted(widget):
+                if shiboken6.isValid(widget):
                     self._layout.removeWidget(widget)
                     widget.deleteLater()
             self._msg_widgets.pop(msg_id, None)
@@ -558,7 +558,7 @@ class MessageList(QScrollArea):
             self._cancel_edit()
 
         body_label = self._msg_widgets.get(msg_id)
-        if body_label is None or sip.isdeleted(body_label):
+        if body_label is None or not shiboken6.isValid(body_label):
             return
 
         raw_body = self._msg_bodies.get(msg_id, "")
@@ -620,7 +620,7 @@ class MessageList(QScrollArea):
         self._editing_msg_id = None
 
         body_label = self._msg_widgets.get(msg_id)
-        if body_label is not None and not sip.isdeleted(body_label):
+        if body_label is not None and shiboken6.isValid(body_label):
             body_label.show()
 
             msg_row = body_label.parent()
@@ -647,7 +647,7 @@ class MessageList(QScrollArea):
         # Remove the edit widget and restore row layout immediately
         self._editing_msg_id = None
         body_label = self._msg_widgets.get(msg_id)
-        if body_label is not None and not sip.isdeleted(body_label):
+        if body_label is not None and shiboken6.isValid(body_label):
             msg_row = body_label.parent()
             if msg_row is not None:
                 msg_row.setFixedHeight(16777215)
@@ -666,7 +666,7 @@ class MessageList(QScrollArea):
             # The gateway message_update event will refresh the label, but
             # update locally immediately for responsiveness.
             self._msg_bodies[msg_id] = new_text
-            if body_label is not None and not sip.isdeleted(body_label):
+            if body_label is not None and shiboken6.isValid(body_label):
                 c = state.theme.colors
                 rendered = _render_body(
                     new_text, c.accent_bright, c.status_success, c.bg_input, c.mention_bg,
@@ -679,7 +679,7 @@ class MessageList(QScrollArea):
         except Exception:
             log.error("Failed to edit message %d", msg_id, exc_info=True)
             # Restore original text on failure
-            if body_label is not None and not sip.isdeleted(body_label):
+            if body_label is not None and shiboken6.isValid(body_label):
                 body_label.show()
 
     @asyncSlot()

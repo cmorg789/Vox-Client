@@ -6,9 +6,9 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QMimeData, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QDrag
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QMimeData, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QDrag
+from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDialog,
@@ -455,7 +455,7 @@ class _CreateCategoryDialog(QDialog):
 class _CategoryHeader(QWidget):
     """Interactive category header: collapse arrow + name + "+" button."""
 
-    create_requested = pyqtSignal(int)  # category_id
+    create_requested = Signal(int)  # category_id
 
     def __init__(
         self,
@@ -616,7 +616,7 @@ class _CategoryHeader(QWidget):
 class _ChannelItem(QWidget):
     """Single clickable channel entry."""
 
-    clicked = pyqtSignal(int, str)  # (id, item_type)
+    clicked = Signal(int, str)  # (id, item_type)
 
     def __init__(
         self,
@@ -667,7 +667,7 @@ class _ChannelItem(QWidget):
 
     def paintEvent(self, event) -> None:  # noqa: ANN001
         if self._bg_color:
-            from PyQt6.QtGui import QPainter, QColor
+            from PySide6.QtGui import QPainter, QColor
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setPen(Qt.PenStyle.NoPen)
@@ -915,9 +915,9 @@ class _VoiceMemberEntry(QWidget):
 class ChannelSidebar(QWidget):
     """Categorized channel list with server name header."""
 
-    feed_selected = pyqtSignal(int)
-    room_selected = pyqtSignal(int)
-    settings_clicked = pyqtSignal()
+    feed_selected = Signal(int)
+    room_selected = Signal(int)
+    settings_clicked = Signal()
 
     def __init__(self) -> None:
         super().__init__()

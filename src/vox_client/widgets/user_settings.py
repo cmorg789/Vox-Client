@@ -7,9 +7,9 @@ import sys
 
 log = logging.getLogger(__name__)
 
-from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPixmap
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QGridLayout,
@@ -52,7 +52,7 @@ _DATE_FMT = "%B %#d, %Y" if sys.platform == "win32" else "%B %-d, %Y"
 # -- Account Page ------------------------------------------------------------
 
 class _AccountPage(QWidget):
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -358,7 +358,7 @@ class _AppearancePage(QWidget):
         self._log_combo.setStyleSheet(combo_style)
         for lvl in ("DEBUG", "INFO", "WARNING", "ERROR"):
             self._log_combo.addItem(lvl)
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
         current = QSettings("Vox", "VoxClient").value("logging/level", "INFO")
         idx = self._log_combo.findText(current)
         if idx >= 0:
@@ -395,14 +395,14 @@ class _AppearancePage(QWidget):
     @staticmethod
     def _on_log_level_changed(level: str) -> None:
         import logging
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
         QSettings("Vox", "VoxClient").setValue("logging/level", level)
         logging.getLogger().setLevel(getattr(logging, level, logging.WARNING))
 
     @staticmethod
     def _open_log_dir(path: object) -> None:
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
@@ -491,7 +491,7 @@ class _MicSlider(QSlider):
 class _AudioVideoPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
 
         c = AppState.instance().theme.colors
         settings = QSettings("Vox", "VoxClient")
@@ -540,7 +540,7 @@ class _AudioVideoPage(QWidget):
         self._camera_combo.setFixedHeight(30)
         self._camera_combo.setStyleSheet(combo_style)
         try:
-            from PyQt6.QtMultimedia import QMediaDevices
+            from PySide6.QtMultimedia import QMediaDevices
             cameras = QMediaDevices.videoInputs()
             self._camera_combo.addItem("Default", None)
             for dev in cameras:
@@ -567,7 +567,7 @@ class _AudioVideoPage(QWidget):
         self._input_combo.setFixedHeight(30)
         self._input_combo.setStyleSheet(combo_style)
         try:
-            from PyQt6.QtMultimedia import QMediaDevices
+            from PySide6.QtMultimedia import QMediaDevices
             inputs = QMediaDevices.audioInputs()
             self._input_combo.addItem("Default", None)
             for dev in inputs:
@@ -585,7 +585,7 @@ class _AudioVideoPage(QWidget):
         self._output_combo.setFixedHeight(30)
         self._output_combo.setStyleSheet(combo_style)
         try:
-            from PyQt6.QtMultimedia import QMediaDevices
+            from PySide6.QtMultimedia import QMediaDevices
             outputs = QMediaDevices.audioOutputs()
             self._output_combo.addItem("Default", None)
             for dev in outputs:
@@ -693,15 +693,15 @@ class _AudioVideoPage(QWidget):
         media_type: str, callback: callable, denied_callback: callable,
     ) -> None:
         try:
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             if media_type == "vide":
-                from PyQt6.QtCore import QCameraPermission
+                from PySide6.QtCore import QCameraPermission
                 perm = QCameraPermission()
             else:
-                from PyQt6.QtCore import QMicrophonePermission
+                from PySide6.QtCore import QMicrophonePermission
                 perm = QMicrophonePermission()
             qapp = QApplication.instance()
-            from PyQt6.QtCore import Qt as QtNS
+            from PySide6.QtCore import Qt as QtNS
             status = qapp.checkPermission(perm)
             if status == QtNS.PermissionStatus.Granted:
                 callback()
@@ -717,7 +717,7 @@ class _AudioVideoPage(QWidget):
                     callback()
                 elif av_status == 0:
                     def _handler(granted: bool) -> None:
-                        from PyQt6.QtCore import QTimer
+                        from PySide6.QtCore import QTimer
                         target = callback if granted else denied_callback
                         QTimer.singleShot(0, target)
                     AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
@@ -748,11 +748,11 @@ class _AudioVideoPage(QWidget):
 
     def _start_camera(self) -> None:
         try:
-            from PyQt6.QtMultimedia import QCamera, QMediaCaptureSession, QVideoSink
+            from PySide6.QtMultimedia import QCamera, QMediaCaptureSession, QVideoSink
 
             dev_data = self._camera_combo.currentData()
             if dev_data is not None:
-                from PyQt6.QtMultimedia import QMediaDevices
+                from PySide6.QtMultimedia import QMediaDevices
                 for d in QMediaDevices.videoInputs():
                     if d.id() == dev_data:
                         self._camera = QCamera(d)
@@ -817,7 +817,7 @@ class _AudioVideoPage(QWidget):
 
     def _start_mic_capture(self) -> None:
         try:
-            from PyQt6.QtMultimedia import QAudioSource, QMediaDevices
+            from PySide6.QtMultimedia import QAudioSource, QMediaDevices
 
             dev_data = self._input_combo.currentData()
             dev = QMediaDevices.defaultAudioInput()
@@ -844,7 +844,7 @@ class _AudioVideoPage(QWidget):
         if len(data) < 4:
             return
         import math, struct
-        from PyQt6.QtMultimedia import QAudioFormat
+        from PySide6.QtMultimedia import QAudioFormat
         raw = bytes(data.data())
         if self._mic_sample_format == QAudioFormat.SampleFormat.Float:
             n = len(raw) // 4
@@ -870,8 +870,8 @@ class _AudioVideoPage(QWidget):
 
     def _on_test_speakers(self) -> None:
         try:
-            from PyQt6.QtMultimedia import QAudioSink, QAudioFormat, QMediaDevices
-            from PyQt6.QtCore import QByteArray, QBuffer, QIODevice, QTimer
+            from PySide6.QtMultimedia import QAudioSink, QAudioFormat, QMediaDevices
+            from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QTimer
             import math, struct
 
             fmt = QAudioFormat()
@@ -935,7 +935,7 @@ class _AudioVideoPage(QWidget):
             self._speaker_test_btn.setEnabled(True)
 
     def _on_save(self) -> None:
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
         settings = QSettings("Vox", "VoxClient")
         settings.setValue("av/camera_device", self._camera_combo.currentData())
         settings.setValue("av/input_device", self._input_combo.currentData())
@@ -989,8 +989,8 @@ class _PrivacyPage(QWidget):
         )
         idle_row.addWidget(idle_label)
 
-        from PyQt6.QtWidgets import QSpinBox
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtWidgets import QSpinBox
+        from PySide6.QtCore import QSettings
 
         settings = QSettings("Vox", "VoxClient")
         current_minutes = settings.value("idle/timeout_minutes", 5, type=int)
@@ -1168,7 +1168,7 @@ class _PrivacyPage(QWidget):
 
     def _on_idle_timeout_changed(self, minutes: int) -> None:
         # Find the MainWindow's IdleManager and update it live
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance()
         if app is None:
@@ -1179,7 +1179,7 @@ class _PrivacyPage(QWidget):
                 idle_mgr.set_timeout(minutes)
                 return
         # No live manager (not logged in?) — just persist the setting
-        from PyQt6.QtCore import QSettings
+        from PySide6.QtCore import QSettings
 
         QSettings("Vox", "VoxClient").setValue("idle/timeout_minutes", minutes)
 
@@ -1197,15 +1197,15 @@ class _AboutPage(QWidget):
 
         layout.addWidget(section_label("APP INFO"))
 
-        from PyQt6.QtCore import PYQT_VERSION_STR
+        import PySide6
         import vox_client
 
-        from PyQt6.QtWidgets import QGridLayout
+        from PySide6.QtWidgets import QGridLayout
 
         info_items = [
             ("Version", vox_client.__version__),
             ("Python", sys.version.split()[0]),
-            ("Qt", PYQT_VERSION_STR),
+            ("Qt", PySide6.__version__),
         ]
         info_grid = QGridLayout()
         info_grid.setContentsMargins(0, 0, 0, 0)
@@ -1334,7 +1334,7 @@ _NAV_ITEMS = [
 class UserSettingsDialog(BaseSettingsDialog):
     """Frameless user settings dialog with sidebar navigation."""
 
-    logout_requested = pyqtSignal()
+    logout_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("USER SETTINGS", _NAV_ITEMS, parent)

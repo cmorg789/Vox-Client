@@ -6,8 +6,8 @@ import asyncio
 import logging
 import time
 
-from PyQt6.QtCore import QEvent, QObject, QSettings, QTimer
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QObject, QSettings, QTimer
+from PySide6.QtWidgets import QApplication
 
 from vox_sdk.models.users import PresenceResponse
 
