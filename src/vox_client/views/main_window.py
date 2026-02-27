@@ -48,6 +48,8 @@ def _clear_session() -> None:
     s.remove("session/url")
     s.remove("session/token")
     s.remove("session/user_id")
+    s.remove("last/feed_id")
+    s.remove("last/dm_id")
 
 
 def _is_auth_error(exc: BaseException) -> bool:
@@ -254,7 +256,7 @@ class MainWindow(QMainWindow):
         retry_btn.setFixedHeight(22)
         retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         retry_btn.setStyleSheet(
-            f"QPushButton {{ color: {c.bg_deep}; font-size: 11px; font-weight: bold; "
+            f"QPushButton {{ color: {c.bg_deep}; font-size: 11px; font-weight: 500; "
             f"border: 1px solid {c.bg_deep}; border-radius: 3px; padding: 2px 10px; "
             f"background: transparent; }}"
             f"QPushButton:hover {{ background-color: {c.bg_deep}; color: {c.status_warning}; }}"
@@ -324,6 +326,19 @@ class MainWindow(QMainWindow):
         self._channel_sidebar.populate()
         self._user_panel.update_user()
         self._member_sidebar.refresh()
+
+        # Auto-select last viewed feed (or first available)
+        state = self._state
+        if state._feeds:
+            saved = QSettings("Vox", "VoxClient").value("last/feed_id")
+            if saved is not None:
+                saved = int(saved)
+            if saved and saved in state._feeds:
+                feed_id = saved
+            else:
+                # Pick the first text feed by position
+                feed_id = next(iter(state._feeds))
+            self._channel_sidebar._on_channel_clicked(feed_id, "feed")
 
     # -- slots -----------------------------------------------------------------
 
@@ -410,6 +425,7 @@ class MainWindow(QMainWindow):
         try:
             self._state.current_feed_id = feed_id
             self._state.current_dm_id = None
+            QSettings("Vox", "VoxClient").setValue("last/feed_id", feed_id)
             name = self._state.get_feed_name(feed_id)
             self._chat_header.set_channel(feed_id)
             self._chat_input.set_channel_name(name)
@@ -599,6 +615,17 @@ class MainWindow(QMainWindow):
         if state.client is not None:
             await state.load_dm_list()
 
+        # Auto-select last viewed DM (or first available)
+        if state._dms:
+            saved = QSettings("Vox", "VoxClient").value("last/dm_id")
+            if saved is not None:
+                saved = int(saved)
+            if saved and saved in state._dms:
+                dm_id = saved
+            else:
+                dm_id = next(iter(state._dms))
+            self._dm_sidebar.select_dm(dm_id)
+
     def _on_dm_mode_changed(self, entering_dm: bool) -> None:
         """Switch between DM mode and server mode."""
         if entering_dm:
@@ -609,6 +636,17 @@ class MainWindow(QMainWindow):
             self._channel_sidebar.show()
             self._dm_sidebar.hide()
             self._member_sidebar.show()
+            # Re-select the last viewed feed
+            state = self._state
+            if state._feeds:
+                saved = QSettings("Vox", "VoxClient").value("last/feed_id")
+                if saved is not None:
+                    saved = int(saved)
+                if saved and saved in state._feeds:
+                    feed_id = saved
+                else:
+                    feed_id = next(iter(state._feeds))
+                self._channel_sidebar._on_channel_clicked(feed_id, "feed")
 
     @asyncSlot(int)
     async def _on_dm_selected(self, dm_id: int) -> None:
@@ -617,6 +655,7 @@ class MainWindow(QMainWindow):
             state = self._state
             state.current_dm_id = dm_id
             state.current_feed_id = None
+            QSettings("Vox", "VoxClient").setValue("last/dm_id", dm_id)
             name = state.get_dm_display_name(dm_id)
             self._chat_header.set_dm(dm_id)
             self._chat_input.set_dm_name(name)
