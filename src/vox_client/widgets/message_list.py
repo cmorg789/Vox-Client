@@ -212,6 +212,7 @@ class MessageList(QScrollArea):
         for url in event.mimeData().urls():
             if url.isLocalFile():
                 self.file_dropped.emit(url.toLocalFile())
+        event.acceptProposedAction()
 
     async def load_messages(self, feed_id: int) -> None:
         """Fetch and display the most recent messages for *feed_id*."""

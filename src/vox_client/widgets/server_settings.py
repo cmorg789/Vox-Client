@@ -662,6 +662,11 @@ class _EmojiStickersPage(QWidget):
                 fields["locale"] = locale
             if fields:
                 await state.client.server.update_gifs_config(**fields)
+            self._gifs_original = {
+                "provider": provider,
+                "content_filter": cf,
+                "locale": locale,
+            }
             set_status(self._gifs_status, "saved", "success")
         except Exception as exc:
             log.error("Failed to save GIF settings: %s", exc)

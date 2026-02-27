@@ -55,10 +55,6 @@ def setup_logging(level: str | None = None, stderr: bool = False) -> None:
     root.setLevel(numeric)
     root.addHandler(file_handler)
 
-    # Prevent noisy libraries from dumping binary data / transport details at DEBUG
-    # for noisy in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
-    #     logging.getLogger(noisy).setLevel(max(numeric, logging.WARNING))
-
     # qasync logs full Future results (including raw file bytes) at DEBUG;
     # filter those specific messages to keep other qasync debug output useful.
     class _QAsyncBytesFilter(logging.Filter):
