@@ -9,11 +9,16 @@ import warnings
 # Collect the native vox_media Rust extension (.so / .pyd / .dylib) and any
 # delvewheel-vendored DLLs on Windows.  collect_dynamic_libs() misses pyo3
 # extensions inside a package, so we locate them manually.
+#
+# We use importlib.util.find_spec() instead of importing vox_media directly
+# because on Windows the native .pyd may fail to load at build time if its
+# vendored DLL dependencies aren't on the DLL search path yet.
 vox_media_binaries = []
 vox_media_datas = []
-try:
-    import vox_media as _vm
-    pkg_dir = os.path.dirname(_vm.__file__)
+import importlib.util
+_vm_spec = importlib.util.find_spec("vox_media")
+if _vm_spec is not None and _vm_spec.origin is not None:
+    pkg_dir = os.path.dirname(_vm_spec.origin)
     for pattern in ("*.pyd", "*.so"):
         for path in glob.glob(os.path.join(pkg_dir, pattern)):
             fname = os.path.basename(path)
@@ -39,7 +44,7 @@ try:
             print(f"  {src} -> {dst}/")
     else:
         warnings.warn("vox_media package found but no native extension located — audio will not work!")
-except ImportError:
+else:
     warnings.warn("vox_media not installed — native media will not be bundled")
 
 a = Analysis(
