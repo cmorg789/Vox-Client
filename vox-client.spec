@@ -24,16 +24,16 @@ try:
     # Collect delvewheel vendored DLLs on Windows.
     # delvewheel places them in either .vox_media.libs or vox_media.libs
     # at the site-packages level (sibling to the package dir).
-    # We place them BOTH in their original directory (for the delvewheel
-    # loader) AND next to the .pyd (so the Windows DLL search finds them
-    # regardless of how the frozen import loader resolves dependencies).
+    # We place them in "." (the bundle root / _internal/) so they sit
+    # alongside all other DLLs where PyInstaller's default SetDllDirectory
+    # already points — no runtime path manipulation needed.
     site_dir = os.path.dirname(pkg_dir)
     for libs_name in (".vox_media.libs", "vox_media.libs"):
         libs_dir = os.path.join(site_dir, libs_name)
         if os.path.isdir(libs_dir):
             for dll in glob.glob(os.path.join(libs_dir, "*.dll")):
-                vox_media_binaries.append((dll, libs_name))
-            print(f"vox_media: collected delvewheel libs from {libs_dir}")
+                vox_media_binaries.append((dll, "."))
+            print(f"vox_media: collected delvewheel libs from {libs_dir} -> bundle root")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:
