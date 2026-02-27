@@ -14,30 +14,32 @@ import warnings
 # because on Windows the native .pyd may fail to load at build time if its
 # vendored DLL dependencies aren't on the DLL search path yet.
 vox_media_binaries = []
-vox_media_datas = []
 import importlib.util
 _vm_spec = importlib.util.find_spec("vox_media")
 if _vm_spec is not None and _vm_spec.origin is not None:
     pkg_dir = os.path.dirname(_vm_spec.origin)
-    for pattern in ("*.pyd", "*.so"):
+    # Collect the native extension (.pyd / .so) and any companion DLLs
+    # that delvewheel placed inside the package directory itself.
+    for pattern in ("*.pyd", "*.so", "*.dll"):
         for path in glob.glob(os.path.join(pkg_dir, pattern)):
             fname = os.path.basename(path)
             if fname.startswith("__"):
                 continue
             vox_media_binaries.append((path, "vox_media"))
     # Collect delvewheel vendored DLLs on Windows.
-    # delvewheel places them in either .vox_media.libs or vox_media.libs
-    # at the site-packages level (sibling to the package dir).
-    # We place them in "." (the bundle root / _internal/) so they sit
-    # alongside all other DLLs where PyInstaller's default SetDllDirectory
-    # already points — no runtime path manipulation needed.
+    # delvewheel places them in a .libs sibling directory at site-packages
+    # level (e.g. site-packages/vox_media.libs/).  We must preserve this
+    # directory structure because delvewheel's __init__.py uses
+    # os.add_dll_directory() to add the .libs path at runtime — on Python
+    # 3.8+ this is the ONLY mechanism for extension module DLL resolution
+    # (SetDllDirectory does not apply to extension modules).
     site_dir = os.path.dirname(pkg_dir)
-    for libs_name in (".vox_media.libs", "vox_media.libs"):
+    for libs_name in ("vox_media.libs", ".vox_media.libs"):
         libs_dir = os.path.join(site_dir, libs_name)
         if os.path.isdir(libs_dir):
             for dll in glob.glob(os.path.join(libs_dir, "*.dll")):
-                vox_media_binaries.append((dll, "."))
-            print(f"vox_media: collected delvewheel libs from {libs_dir} -> bundle root")
+                vox_media_binaries.append((dll, libs_name))
+            print(f"vox_media: collected delvewheel libs from {libs_dir} -> {libs_name}/")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:
