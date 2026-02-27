@@ -77,7 +77,7 @@ def _render_body(body: str, accent_bright: str, code_color: str, code_bg: str, m
     # @mentions — accent_bright text with translucent accent background
     text = _MENTION_RE.sub(
         rf'<span style="color: {accent_bright}; background-color: {mention_bg}; '
-        rf'padding: 1px 3px; border-radius: 3px; font-weight: bold;">@\1</span>',
+        rf'padding: 1px 3px; border-radius: 3px;">@\1</span>',
         text,
     )
     return text

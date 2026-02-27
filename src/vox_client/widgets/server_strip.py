@@ -57,13 +57,13 @@ class _ServerButton(QWidget):
             self._indicator.show()
             self._btn.setStyleSheet(
                 f"QPushButton {{ background-color: {c.bg_panel}; color: {c.accent_bright}; "
-                f"border: 1px solid {c.accent}; border-radius: 6px; font-weight: 600; font-size: 14px; padding: 0px; }}"
+                f"border: 1px solid {c.accent}; border-radius: 6px; font-weight: 600; font-size: 13px; padding: 0px; }}"
             )
         else:
             self._indicator.hide()
             self._btn.setStyleSheet(
                 f"QPushButton {{ background-color: {c.bg_panel}; color: {c.text_secondary}; "
-                f"border: 1px solid {c.border}; border-radius: 6px; font-size: 14px; padding: 0px; }}"
+                f"border: 1px solid {c.border}; border-radius: 6px; font-size: 13px; padding: 0px; }}"
                 f"QPushButton:hover {{ background-color: {c.bg_hover}; color: {c.text_primary}; "
                 f"border-color: {c.border_bright}; }}"
             )

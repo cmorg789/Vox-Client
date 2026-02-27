@@ -54,7 +54,7 @@ class _DMItem(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 6, 4)
+        layout.setContentsMargins(12, 4, 6, 4)
         layout.setSpacing(8)
 
         # Presence dot

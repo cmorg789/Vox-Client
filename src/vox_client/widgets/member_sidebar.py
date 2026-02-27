@@ -29,7 +29,7 @@ class _MemberItem(QWidget):
         c = state.theme.colors
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 2, 8, 2)
+        layout.setContentsMargins(12, 4, 8, 4)
         layout.setSpacing(8)
 
         # Avatar circle
