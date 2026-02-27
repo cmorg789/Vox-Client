@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 
@@ -496,16 +497,29 @@ class ChatInput(QFrame):
     def _remove_staged(self, path: str, chip: QWidget) -> None:
         if path in self._staged_attachments:
             self._staged_attachments.remove(path)
+        self._cleanup_temp_file(path)
         chip.deleteLater()
         if not self._staged_attachments:
             self._preview_strip.hide()
 
     def _clear_attachment_preview(self) -> None:
+        for path in self._staged_attachments:
+            self._cleanup_temp_file(path)
+        self._staged_attachments.clear()
         while self._preview_layout.count() > 1:
             item = self._preview_layout.takeAt(0)
             if item and item.widget():
                 item.widget().deleteLater()
         self._preview_strip.hide()
+
+    @staticmethod
+    def _cleanup_temp_file(path: str) -> None:
+        """Remove *path* if it lives in the OS temp directory."""
+        try:
+            if path.startswith(tempfile.gettempdir()):
+                os.unlink(path)
+        except OSError:
+            pass
 
     # -- GIF picker ------------------------------------------------------------
 

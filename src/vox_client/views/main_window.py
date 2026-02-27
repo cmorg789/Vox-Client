@@ -467,20 +467,15 @@ class MainWindow(QMainWindow):
                 else:
                     continue
                 file_ids.append(resp.file_id)
-            except Exception:
-                log.error("Failed to upload file %s", path, exc_info=True)
-            finally:
-                # Clean up temp files from clipboard paste
+                # Clean up temp files from clipboard paste after successful upload
                 try:
                     import tempfile
                     if path.startswith(tempfile.gettempdir()):
                         os.unlink(path)
                 except OSError:
                     pass
-
-        # Re-read context after awaits to avoid sending to a stale channel
-        dm_id = self._state.current_dm_id
-        feed_id = self._state.current_feed_id
+            except Exception:
+                log.error("Failed to upload file %s", path, exc_info=True)
 
         # Build optional kwargs
         kwargs: dict = {}
