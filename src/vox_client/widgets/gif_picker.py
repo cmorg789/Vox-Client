@@ -7,7 +7,7 @@ import logging
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QGridLayout,
     QLineEdit,
@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from vox_client.cache import media_cache
 from vox_client.state import AppState
+from vox_client.widgets.media_widgets import _get_nam, _pixmap_cache
 
 log = logging.getLogger(__name__)
 
@@ -35,8 +37,6 @@ class GifPicker(QWidget):
         self.setFixedSize(380, 420)
         self.setObjectName("GifPicker")
 
-        self._nam = QNetworkAccessManager(self)
-        self._thumb_cache: dict[str, QPixmap] = {}
         self._fetch_generation: int = 0
 
         self._search_timer = QTimer()
@@ -86,6 +86,10 @@ class GifPicker(QWidget):
         self._search.setFocus()
         self._search.clear()
         self._load_trending()
+
+    def hideEvent(self, event) -> None:  # noqa: ANN001
+        self._search_timer.stop()
+        super().hideEvent(event)
 
     # -- search ----------------------------------------------------------------
 
@@ -161,12 +165,17 @@ class GifPicker(QWidget):
                 self._load_thumbnail(btn, thumb_url)
 
     def _load_thumbnail(self, btn: QPushButton, url: str) -> None:
-        if url in self._thumb_cache:
-            btn.setIcon(QIcon(self._thumb_cache[url]))
+        if url in _pixmap_cache:
+            btn.setIcon(QIcon(_pixmap_cache[url]))
             btn.setIconSize(QSize(_THUMB_SIZE - 4, _THUMB_SIZE - 4))
             return
+        cached = media_cache.get(url)
+        if cached is not None:
+            self._decode_and_apply(cached, btn, url)
+            return
         req = QNetworkRequest(QUrl(url))
-        reply = self._nam.get(req)
+        nam = _get_nam()
+        reply = nam.get(req)
         reply.finished.connect(
             lambda r=reply, b=btn, u=url: self._on_thumb_loaded(r, b, u)
         )
@@ -176,24 +185,31 @@ class GifPicker(QWidget):
     ) -> None:
         try:
             if reply.error() == QNetworkReply.NetworkError.NoError:
-                pm = QPixmap()
-                pm.loadFromData(reply.readAll())
-                if not pm.isNull():
-                    scaled = pm.scaled(
-                        _THUMB_SIZE * 2,
-                        _THUMB_SIZE * 2,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    scaled.setDevicePixelRatio(2)
-                    self._thumb_cache[url] = scaled
-                    try:
-                        btn.setIcon(QIcon(scaled))
-                        btn.setIconSize(QSize(_THUMB_SIZE - 4, _THUMB_SIZE - 4))
-                    except RuntimeError:
-                        pass  # Button already deleted by grid clear
+                data = bytes(reply.readAll())
+                media_cache.put(url, data)
+                self._decode_and_apply(data, btn, url)
         finally:
             reply.deleteLater()
+
+    def _decode_and_apply(
+        self, data: bytes, btn: QPushButton, url: str
+    ) -> None:
+        pm = QPixmap()
+        pm.loadFromData(data)
+        if not pm.isNull():
+            scaled = pm.scaled(
+                _THUMB_SIZE * 2,
+                _THUMB_SIZE * 2,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled.setDevicePixelRatio(2)
+            _pixmap_cache[url] = scaled
+            try:
+                btn.setIcon(QIcon(scaled))
+                btn.setIconSize(QSize(_THUMB_SIZE - 4, _THUMB_SIZE - 4))
+            except RuntimeError:
+                pass  # Button already deleted by grid clear
 
     # -- styling ---------------------------------------------------------------
 
