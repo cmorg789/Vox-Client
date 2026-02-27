@@ -24,6 +24,21 @@ log = logging.getLogger(__name__)
 from vox_client.theme import Theme, role_color_for_int
 
 
+def _event_to_msg_dict(event: object) -> dict:
+    """Convert a gateway message event to a MessageResponse-shaped dict."""
+    return {
+        "msg_id": getattr(event, "msg_id", None),
+        "feed_id": getattr(event, "feed_id", None),
+        "dm_id": getattr(event, "dm_id", None),
+        "author_id": getattr(event, "author_id", None),
+        "body": getattr(event, "body", None),
+        "timestamp": getattr(event, "timestamp", 0),
+        "attachments": getattr(event, "attachments", []),
+        "embed": getattr(event, "embed", None),
+        "edit_timestamp": getattr(event, "edit_timestamp", None),
+    }
+
+
 def _log_volume(percent: int) -> float:
     """Convert a linear slider value (0–200) to a perceptual log volume (0.0–2.0).
 
@@ -632,15 +647,35 @@ class AppState(QObject):
 
         @self.gateway.on("message_create")
         async def _on_message_create(event):  # noqa: ANN001
-            self._run_on_main.emit(lambda e=event: self.message_received.emit(e))
+            def _apply(e=event):  # noqa: ANN001
+                from vox_client.cache import message_cache
+                key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
+                message_cache.append(key, _event_to_msg_dict(e))
+                self.message_received.emit(e)
+            self._run_on_main.emit(_apply)
 
         @self.gateway.on("message_update")
         async def _on_message_update(event):  # noqa: ANN001
-            self._run_on_main.emit(lambda e=event: self.message_updated.emit(e))
+            def _apply(e=event):  # noqa: ANN001
+                from vox_client.cache import message_cache
+                key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
+                message_cache.update(
+                    key,
+                    getattr(e, "msg_id", 0),
+                    getattr(e, "body", "") or "",
+                    getattr(e, "edit_timestamp", None),
+                )
+                self.message_updated.emit(e)
+            self._run_on_main.emit(_apply)
 
         @self.gateway.on("message_delete")
         async def _on_message_delete(event):  # noqa: ANN001
-            self._run_on_main.emit(lambda e=event: self.message_deleted.emit(e))
+            def _apply(e=event):  # noqa: ANN001
+                from vox_client.cache import message_cache
+                key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
+                message_cache.delete(key, getattr(e, "msg_id", 0))
+                self.message_deleted.emit(e)
+            self._run_on_main.emit(_apply)
 
         @self.gateway.on("presence_update")
         async def _on_presence_update(event):  # noqa: ANN001

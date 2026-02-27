@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from qasync import asyncSlot
 
+from vox_client.cache import ChannelMeta, message_cache
 from vox_client.state import AppState
 from vox_client.widgets.ui_helpers import clear_layout
 
@@ -223,6 +224,23 @@ class MessageList(QScrollArea):
         self._last_date = None
         self._clear()
 
+        cache_key = f"feed:{feed_id}"
+        cached = message_cache.get(cache_key)
+
+        if cached is not None:
+            msgs_dicts, meta = cached
+            self._has_more = meta.has_more
+            self._oldest_msg_id = meta.oldest_msg_id
+            for d in msgs_dicts:
+                self._add_message(
+                    d.get("author_id"), d.get("timestamp", 0), d.get("body"),
+                    msg_id=d.get("msg_id"),
+                    attachments=d.get("attachments") or None,
+                    embed=d.get("embed"),
+                )
+            self._scroll_to_bottom()
+            return
+
         state = AppState.instance()
         assert state.client is not None
         try:
@@ -251,6 +269,15 @@ class MessageList(QScrollArea):
             # result.messages is newest-first; last element is the oldest
             self._oldest_msg_id = result.messages[-1].msg_id
 
+        # Populate cache — store chronological (oldest→newest = reversed API order)
+        chrono = [m.model_dump() for m in reversed(result.messages)]
+        meta = ChannelMeta(
+            oldest_msg_id=self._oldest_msg_id,
+            newest_msg_id=result.messages[0].msg_id if result.messages else None,
+            has_more=self._has_more,
+        )
+        message_cache.put(cache_key, chrono, meta)
+
         self._scroll_to_bottom()
 
     async def load_dm_messages(self, dm_id: int) -> None:
@@ -260,6 +287,23 @@ class MessageList(QScrollArea):
         self._last_author = None
         self._last_date = None
         self._clear()
+
+        cache_key = f"dm:{dm_id}"
+        cached = message_cache.get(cache_key)
+
+        if cached is not None:
+            msgs_dicts, meta = cached
+            self._has_more = meta.has_more
+            self._oldest_msg_id = meta.oldest_msg_id
+            for d in msgs_dicts:
+                self._add_message(
+                    d.get("author_id"), d.get("timestamp", 0), d.get("body"),
+                    msg_id=d.get("msg_id"),
+                    attachments=d.get("attachments") or None,
+                    embed=d.get("embed"),
+                )
+            self._scroll_to_bottom()
+            return
 
         state = AppState.instance()
         assert state.client is not None
@@ -285,6 +329,15 @@ class MessageList(QScrollArea):
 
         if result.messages:
             self._oldest_msg_id = result.messages[-1].msg_id
+
+        # Populate cache
+        chrono = [m.model_dump() for m in reversed(result.messages)]
+        meta = ChannelMeta(
+            oldest_msg_id=self._oldest_msg_id,
+            newest_msg_id=result.messages[0].msg_id if result.messages else None,
+            has_more=self._has_more,
+        )
+        message_cache.put(cache_key, chrono, meta)
 
         self._scroll_to_bottom()
 
@@ -546,9 +599,15 @@ class MessageList(QScrollArea):
         return (insert_idx, cur_author, cur_date)
 
     def _scroll_to_bottom(self) -> None:
-        QTimer.singleShot(10, lambda: self.verticalScrollBar().setValue(
-            self.verticalScrollBar().maximum()
-        ))
+        from PySide6.QtWidgets import QApplication
+
+        def _do_scroll() -> None:
+            # Force geometry recalculation so maximum() is correct
+            self._container.adjustSize()
+            QApplication.processEvents()
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+        QTimer.singleShot(0, _do_scroll)
 
     def _on_message_received(self, event: object) -> None:
         try:
@@ -926,4 +985,16 @@ class MessageList(QScrollArea):
             scrollbar.setValue(old_val + delta)
 
         QTimer.singleShot(10, _restore_scroll)
+
+        # Extend the cache with the older messages
+        cache_key = f"dm:{dm_id}" if dm_id is not None else f"feed:{feed_id}"
+        chrono = [m.model_dump() for m in reversed(result.messages)]
+        updated_meta = ChannelMeta(
+            oldest_msg_id=self._oldest_msg_id,
+            newest_msg_id=(message_cache._meta[cache_key].newest_msg_id
+                           if cache_key in message_cache._meta else None),
+            has_more=self._has_more,
+        )
+        message_cache.prepend(cache_key, chrono, updated_meta)
+
         self._loading_older = False
