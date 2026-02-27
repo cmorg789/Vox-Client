@@ -495,6 +495,10 @@ class MainWindow(QMainWindow):
             if urls:
                 kwargs["embed"] = json.dumps({"url": urls[0]})
 
+        # Nothing to send (e.g. all uploads failed, no text)
+        if not text and not kwargs:
+            return
+
         if dm_id is not None:
             try:
                 await self._state.client.dms.send_message(

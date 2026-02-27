@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QBuffer, QSize, Qt, QUrl
+from PySide6.QtCore import QBuffer, QByteArray, QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QMovie, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+from qasync import asyncSlot
 
 from vox_client.cache import media_cache
 from vox_client.state import AppState
@@ -41,6 +51,79 @@ def _human_size(size: int) -> str:
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+class ImagePreviewDialog(QDialog):
+    """Full-size image preview shown as a dark overlay modal."""
+
+    def __init__(self, data: bytes, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setModal(True)
+
+        # Size to 90% of the screen
+        screen = self.screen().availableGeometry()
+        self.resize(screen.width(), screen.height())
+        self.move(screen.topLeft())
+
+        self._movie: QMovie | None = None
+        self._movie_buf: QBuffer | None = None
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Dark backdrop
+        backdrop = QWidget()
+        backdrop.setStyleSheet("background: rgba(0, 0, 0, 180);")
+        outer.addWidget(backdrop)
+
+        layout = QVBoxLayout(backdrop)
+        layout.setContentsMargins(40, 40, 40, 40)
+
+        # Image label
+        img_label = QLabel()
+        img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        img_label.setStyleSheet("background: transparent; border: none;")
+        layout.addWidget(img_label, 1)
+
+        max_w = screen.width() - 120
+        max_h = screen.height() - 120
+
+        if data[:6] in (b"GIF89a", b"GIF87a"):
+            self._qba = QByteArray(data)
+            self._movie_buf = QBuffer(self)
+            self._movie_buf.setData(self._qba)
+            self._movie_buf.open(QBuffer.OpenModeFlag.ReadOnly)
+            self._movie = QMovie(self)
+            self._movie.setDevice(self._movie_buf)
+            # Read first frame to get natural size
+            self._movie.jumpToFrame(0)
+            natural = self._movie.currentPixmap().size()
+            if natural.width() > max_w or natural.height() > max_h:
+                ratio = min(max_w / natural.width(), max_h / natural.height())
+                self._movie.setScaledSize(QSize(int(natural.width() * ratio), int(natural.height() * ratio)))
+            img_label.setMovie(self._movie)
+            self._movie.start()
+        else:
+            pm = QPixmap()
+            pm.loadFromData(data)
+            if not pm.isNull():
+                scaled = pm.scaled(
+                    max_w, max_h,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                img_label.setPixmap(scaled)
+
+    def mousePressEvent(self, event) -> None:  # noqa: ANN001
+        self.accept()
+
+    def keyPressEvent(self, event) -> None:  # noqa: ANN001
+        if event.key() == Qt.Key.Key_Escape:
+            self.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class AttachmentImageWidget(QLabel):
@@ -124,7 +207,6 @@ class AttachmentImageWidget(QLabel):
                 self._apply_pixmap(pm)
 
     def _apply_gif(self, data: bytes) -> None:
-        from PySide6.QtCore import QByteArray
         self._qba = QByteArray(data)
         self._movie_buf = QBuffer(self)
         self._movie_buf.setData(self._qba)
@@ -147,7 +229,11 @@ class AttachmentImageWidget(QLabel):
         self.setStyleSheet("border: none; border-radius: 4px;")
 
     def mousePressEvent(self, event) -> None:  # noqa: ANN001
-        QDesktopServices.openUrl(QUrl(self._url))
+        cached = media_cache.get(self._url)
+        if cached is None:
+            return
+        dlg = ImagePreviewDialog(cached, parent=self.window())
+        dlg.exec()
 
 
 class AttachmentFileWidget(QFrame):
@@ -156,6 +242,7 @@ class AttachmentFileWidget(QFrame):
     def __init__(self, name: str, size: int, url: str) -> None:
         super().__init__()
         self._url = url
+        self._file_name = name
         c = AppState.instance().theme.colors
 
         self.setFixedHeight(48)
@@ -189,7 +276,22 @@ class AttachmentFileWidget(QFrame):
         layout.addStretch()
 
     def mousePressEvent(self, event) -> None:  # noqa: ANN001
-        QDesktopServices.openUrl(QUrl(self._url))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save File", self._file_name,
+        )
+        if path:
+            self._download_and_save(path)
+
+    @asyncSlot()
+    async def _download_and_save(self, dest: str) -> None:
+        state = AppState.instance()
+        try:
+            resp = await state.client.http.get(self._url)
+            resp.raise_for_status()
+            from pathlib import Path
+            Path(dest).write_bytes(resp.content)
+        except Exception:
+            log.error("Failed to download file %s", self._url, exc_info=True)
 
 
 class EmbedCardWidget(QFrame):

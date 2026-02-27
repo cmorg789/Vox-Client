@@ -55,6 +55,23 @@ def setup_logging(level: str | None = None, stderr: bool = False) -> None:
     root.setLevel(numeric)
     root.addHandler(file_handler)
 
+    # Prevent noisy libraries from dumping binary data / transport details at DEBUG
+    # for noisy in ("httpx", "httpcore", "httpcore.http11", "httpcore.connection"):
+    #     logging.getLogger(noisy).setLevel(max(numeric, logging.WARNING))
+
+    # qasync logs full Future results (including raw file bytes) at DEBUG;
+    # filter those specific messages to keep other qasync debug output useful.
+    class _QAsyncBytesFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if record.msg == "Setting Future result: %s" and record.args:
+                val = record.args[0] if isinstance(record.args, tuple) else record.args
+                if isinstance(val, (bytes, bytearray)) and len(val) > 200:
+                    record.args = (f"<{len(val)} bytes>",)
+            return True
+
+    # Filters don't propagate to child loggers, so target the specific one
+    logging.getLogger("qasync._QThreadWorker").addFilter(_QAsyncBytesFilter())
+
     if stderr or level == "DEBUG":
         stream_handler = logging.StreamHandler(sys.stderr)
         stream_handler.setFormatter(fmt)

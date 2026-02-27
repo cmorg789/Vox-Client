@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -386,11 +387,30 @@ class ChatInput(QFrame):
     # -- file attachment staging -----------------------------------------------
 
     def _on_plus_clicked(self) -> None:
+        c = AppState.instance().theme.colors
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {c.bg_panel}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 4px; padding: 4px 0; }}"
+            f"QMenu::item {{ padding: 6px 16px; }}"
+            f"QMenu::item:selected {{ background: {c.bg_hover}; }}"
+        )
+        menu.addAction("Upload Image(s)", self._attach_images)
+        menu.addAction("Upload File(s)", self._attach_files)
+        menu.exec(self._plus_btn.mapToGlobal(self._plus_btn.rect().topLeft()))
+
+    def _attach_images(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Attach Files",
-            "",
-            "Images (*.png *.jpg *.jpeg *.gif *.webp);;All Files (*)",
+            self, "Attach Images", "",
+            "Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.svg)",
+        )
+        for path in paths:
+            self._stage_file(path)
+
+    def _attach_files(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Attach Files", "",
+            "All Files (*)",
         )
         for path in paths:
             self._stage_file(path)
