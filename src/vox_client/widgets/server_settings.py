@@ -11,6 +11,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -411,6 +412,106 @@ class _EmojiStickersPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
+        # -- GIF Settings section --
+        layout.addWidget(section_label("GIF SETTINGS", top_pad=12))
+
+        self._gifs_original: dict[str, object] = {}
+
+        # Provider row
+        row_provider = QWidget()
+        row_provider.setFixedHeight(36)
+        row_provider.setStyleSheet(f"background-color: {c.bg_panel}; border-radius: 4px;")
+        rl = QHBoxLayout(row_provider)
+        rl.setContentsMargins(12, 4, 8, 4)
+        rl.setSpacing(8)
+        lbl = QLabel("provider")
+        lbl.setStyleSheet(f"color: {c.text_secondary}; font-size: 12px; border: none;")
+        rl.addWidget(lbl, stretch=1)
+        self._gif_provider = QComboBox()
+        self._gif_provider.addItems(["klipy"])
+        self._gif_provider.setFixedWidth(120)
+        self._gif_provider.setStyleSheet(
+            f"QComboBox {{ background-color: {c.bg_input}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 2px 8px; font-size: 12px; }}"
+        )
+        rl.addWidget(self._gif_provider)
+        layout.addWidget(row_provider)
+
+        # API Key row
+        row_key = QWidget()
+        row_key.setFixedHeight(36)
+        row_key.setStyleSheet(f"background-color: {c.bg_panel}; border-radius: 4px;")
+        rl2 = QHBoxLayout(row_key)
+        rl2.setContentsMargins(12, 4, 8, 4)
+        rl2.setSpacing(8)
+        lbl2 = QLabel("api key")
+        lbl2.setStyleSheet(f"color: {c.text_secondary}; font-size: 12px; border: none;")
+        rl2.addWidget(lbl2, stretch=1)
+        self._gif_api_key = QLineEdit()
+        self._gif_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._gif_api_key.setFixedWidth(200)
+        self._gif_api_key.setStyleSheet(
+            f"background-color: {c.bg_input}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 2px 8px; font-size: 12px;"
+        )
+        rl2.addWidget(self._gif_api_key)
+        layout.addWidget(row_key)
+
+        # Content Filter row
+        row_filter = QWidget()
+        row_filter.setFixedHeight(36)
+        row_filter.setStyleSheet(f"background-color: {c.bg_panel}; border-radius: 4px;")
+        rl3 = QHBoxLayout(row_filter)
+        rl3.setContentsMargins(12, 4, 8, 4)
+        rl3.setSpacing(8)
+        lbl3 = QLabel("content filter")
+        lbl3.setStyleSheet(f"color: {c.text_secondary}; font-size: 12px; border: none;")
+        rl3.addWidget(lbl3, stretch=1)
+        self._gif_content_filter = QComboBox()
+        self._gif_content_filter.addItems(["off", "low", "medium", "high"])
+        self._gif_content_filter.setFixedWidth(120)
+        self._gif_content_filter.setStyleSheet(
+            f"QComboBox {{ background-color: {c.bg_input}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 2px 8px; font-size: 12px; }}"
+        )
+        rl3.addWidget(self._gif_content_filter)
+        layout.addWidget(row_filter)
+
+        # Locale row
+        row_locale = QWidget()
+        row_locale.setFixedHeight(36)
+        row_locale.setStyleSheet(f"background-color: {c.bg_panel}; border-radius: 4px;")
+        rl4 = QHBoxLayout(row_locale)
+        rl4.setContentsMargins(12, 4, 8, 4)
+        rl4.setSpacing(8)
+        lbl4 = QLabel("locale")
+        lbl4.setStyleSheet(f"color: {c.text_secondary}; font-size: 12px; border: none;")
+        rl4.addWidget(lbl4, stretch=1)
+        self._gif_locale = QLineEdit()
+        self._gif_locale.setPlaceholderText("e.g. en_US")
+        self._gif_locale.setFixedWidth(120)
+        self._gif_locale.setStyleSheet(
+            f"background-color: {c.bg_input}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 2px 8px; font-size: 12px;"
+        )
+        rl4.addWidget(self._gif_locale)
+        layout.addWidget(row_locale)
+
+        # Save button + status for GIF settings
+        layout.addSpacing(4)
+        self._gifs_status = status_label()
+        gif_btn_row = QHBoxLayout()
+        gif_btn_row.setSpacing(8)
+        gif_btn_row.addWidget(self._gifs_status)
+        gif_btn_row.addStretch()
+        self._gifs_save_btn = action_button("[ SAVE ]")
+        self._gifs_save_btn.clicked.connect(self._on_save_gifs)
+        gif_btn_row.addWidget(self._gifs_save_btn)
+        layout.addLayout(gif_btn_row)
+
+        layout.addSpacing(16)
+
+        # -- Emoji & Stickers section --
         layout.addWidget(section_label("EMOJI && STICKERS", top_pad=12))
 
         # Tab row
@@ -502,6 +603,27 @@ class _EmojiStickersPage(QWidget):
         state = AppState.instance()
         if state.client is None:
             return
+        # Load GIF settings
+        try:
+            gifs = await state.client.server.get_gifs_config()
+            self._gif_provider.setCurrentText(gifs.get("provider", "klipy"))
+            api_key_set = gifs.get("api_key_set", False)
+            self._gif_api_key.setPlaceholderText("API key set" if api_key_set else "no API key")
+            self._gif_api_key.clear()
+            cf = gifs.get("content_filter", "high")
+            idx = self._gif_content_filter.findText(cf)
+            if idx >= 0:
+                self._gif_content_filter.setCurrentIndex(idx)
+            self._gif_locale.setText(gifs.get("locale") or "")
+            self._gifs_original = {
+                "provider": gifs.get("provider", "klipy"),
+                "content_filter": cf,
+                "locale": gifs.get("locale") or "",
+            }
+        except Exception as exc:
+            log.warning("Failed to load GIF settings: %s", exc)
+            set_status(self._gifs_status, str(exc)[:30], "error")
+        # Load emoji
         try:
             emoji_resp = await state.client.emoji.list_emoji()
             for e in emoji_resp.items:
@@ -516,6 +638,41 @@ class _EmojiStickersPage(QWidget):
         except Exception as exc:
             log.warning("Failed to load stickers: %s", exc)
             set_status(self._sticker_status, str(exc)[:30], "error")
+
+    @asyncSlot()
+    async def _on_save_gifs(self) -> None:
+        state = AppState.instance()
+        if state.client is None:
+            return
+        self._gifs_save_btn.setEnabled(False)
+        set_status(self._gifs_status, "saving...", "info")
+        try:
+            fields: dict[str, str] = {}
+            provider = self._gif_provider.currentText()
+            if provider != self._gifs_original.get("provider"):
+                fields["provider"] = provider
+            api_key = self._gif_api_key.text().strip()
+            if api_key:
+                fields["api_key"] = api_key
+            cf = self._gif_content_filter.currentText()
+            if cf != self._gifs_original.get("content_filter"):
+                fields["content_filter"] = cf
+            locale = self._gif_locale.text().strip()
+            if locale != self._gifs_original.get("locale"):
+                fields["locale"] = locale
+            if fields:
+                await state.client.server.update_gifs_config(**fields)
+            self._gifs_original = {
+                "provider": provider,
+                "content_filter": cf,
+                "locale": locale,
+            }
+            set_status(self._gifs_status, "saved", "success")
+        except Exception as exc:
+            log.error("Failed to save GIF settings: %s", exc)
+            set_status(self._gifs_status, str(exc), "error")
+        finally:
+            self._gifs_save_btn.setEnabled(True)
 
     def _add_emoji_row(self, emoji, prepend: bool = False) -> None:  # noqa: ANN001
         row = _AssetRow(emoji.emoji_id, emoji.name, emoji.creator_id, "emoji")

@@ -145,10 +145,13 @@ class _MessageRow(QWidget):
 class MessageList(QScrollArea):
     """Displays messages for the active feed with rich formatting."""
 
+    file_dropped = Signal(str)  # emitted when a file is drag-and-dropped
+
     def __init__(self) -> None:
         super().__init__()
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setAcceptDrops(True)
 
         state = AppState.instance()
         c = state.theme.colors
@@ -195,6 +198,22 @@ class MessageList(QScrollArea):
         c = AppState.instance().theme.colors
         self.setStyleSheet(f"background-color: {c.bg_main};")
 
+    # -- drag-and-drop ---------------------------------------------------------
+
+    def dragEnterEvent(self, event) -> None:  # noqa: ANN001, N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: ANN001, N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: ANN001, N802
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                self.file_dropped.emit(url.toLocalFile())
+        event.acceptProposedAction()
+
     async def load_messages(self, feed_id: int) -> None:
         """Fetch and display the most recent messages for *feed_id*."""
         self._current_feed_id = feed_id
@@ -219,7 +238,12 @@ class MessageList(QScrollArea):
         self._has_more = len(result.messages) >= 150
 
         for msg in reversed(result.messages):
-            self._add_message(msg.author_id, msg.timestamp, msg.body, msg_id=msg.msg_id)
+            self._add_message(
+                msg.author_id, msg.timestamp, msg.body,
+                msg_id=msg.msg_id,
+                attachments=msg.attachments or None,
+                embed=msg.embed,
+            )
 
         # Track oldest message for pagination cursor
         if result.messages:
@@ -251,7 +275,12 @@ class MessageList(QScrollArea):
         self._has_more = len(result.messages) >= 150
 
         for msg in reversed(result.messages):
-            self._add_message(msg.author_id, msg.timestamp, msg.body, msg_id=msg.msg_id)
+            self._add_message(
+                msg.author_id, msg.timestamp, msg.body,
+                msg_id=msg.msg_id,
+                attachments=msg.attachments or None,
+                embed=msg.embed,
+            )
 
         if result.messages:
             self._oldest_msg_id = result.messages[-1].msg_id
@@ -320,6 +349,8 @@ class MessageList(QScrollArea):
         insert_idx: int | None = None,
         prev_author: int | None = _SENTINEL,
         prev_date: str | None = _SENTINEL,
+        attachments: list | None = None,
+        embed: object | None = None,
     ) -> tuple[int | None, int | None, str | None]:
         """Add a message to the layout.
 
@@ -432,6 +463,73 @@ class MessageList(QScrollArea):
         _place(msg_row)
         row_widgets.append(msg_row)
 
+        # Render attachments
+        if attachments:
+            from vox_client.widgets.media_widgets import (
+                AttachmentFileWidget,
+                AttachmentImageWidget,
+                _get,
+            )
+
+            for att in attachments:
+                att_mime = str(_get(att, "mime", "") or "")
+                att_url = str(_get(att, "url", "") or "")
+                att_name = str(_get(att, "name", "file") or "file")
+                att_size = int(_get(att, "size", 0) or 0)
+                att_w = _get(att, "width")
+                att_h = _get(att, "height")
+
+                if att_url and not att_url.startswith("http"):
+                    att_url = state._resolve_image_url(att_url)
+
+                att_row = _MessageRow(c.bg_hover, message_list=self)
+                att_row.msg_id = msg_id
+                att_row.author_id = author_id
+                att_layout = QHBoxLayout(att_row)
+                att_layout.setContentsMargins(16, 2, 16, 2)
+                att_layout.setSpacing(8)
+
+                att_spacer = QLabel()
+                att_spacer.setFixedWidth(48)
+                att_layout.addWidget(att_spacer)
+
+                if att_mime.startswith("image/"):
+                    widget = AttachmentImageWidget(
+                        att_url,
+                        att_mime,
+                        width=int(att_w) if att_w else None,
+                        height=int(att_h) if att_h else None,
+                    )
+                else:
+                    widget = AttachmentFileWidget(att_name, att_size, att_url)
+                att_layout.addWidget(widget)
+                att_layout.addStretch()
+
+                _place(att_row)
+                row_widgets.append(att_row)
+
+        # Render embed
+        if embed:
+            from vox_client.widgets.media_widgets import EmbedCardWidget
+
+            embed_row = _MessageRow(c.bg_hover, message_list=self)
+            embed_row.msg_id = msg_id
+            embed_row.author_id = author_id
+            embed_layout = QHBoxLayout(embed_row)
+            embed_layout.setContentsMargins(16, 4, 16, 4)
+            embed_layout.setSpacing(8)
+
+            embed_spacer = QLabel()
+            embed_spacer.setFixedWidth(48)
+            embed_layout.addWidget(embed_spacer)
+
+            embed_widget = EmbedCardWidget(embed)
+            embed_layout.addWidget(embed_widget)
+            embed_layout.addStretch()
+
+            _place(embed_row)
+            row_widgets.append(embed_row)
+
         # Track by msg_id for edit/delete
         if msg_id is not None:
             self._msg_widgets[msg_id] = body_label
@@ -454,11 +552,15 @@ class MessageList(QScrollArea):
         try:
             if not self._matches_current_context(event):
                 return
+            event_attachments = getattr(event, "attachments", None)
+            event_embed = getattr(event, "embed", None)
             self._add_message(
                 getattr(event, "author_id", None),
                 getattr(event, "timestamp", 0),
                 getattr(event, "body", None),
                 msg_id=getattr(event, "msg_id", None),
+                attachments=event_attachments or None,
+                embed=event_embed,
             )
             self._scroll_to_bottom()
         except Exception:
@@ -784,6 +886,8 @@ class MessageList(QScrollArea):
                 insert_idx=insert_idx,
                 prev_author=prev_author,
                 prev_date=prev_date,
+                attachments=msg.attachments or None,
+                embed=msg.embed,
             )
 
         # Fix duplicate author header at the pagination boundary:
