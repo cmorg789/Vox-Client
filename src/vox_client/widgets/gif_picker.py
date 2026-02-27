@@ -1,17 +1,15 @@
-"""Tenor GIF picker popup – search and select GIFs to send."""
+"""GIF picker popup – search and select GIFs to send."""
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-from urllib.parse import quote
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QGridLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
@@ -23,14 +21,12 @@ from vox_client.state import AppState
 
 log = logging.getLogger(__name__)
 
-_TENOR_API_KEY = "LIVDSRZULELA"
-_TENOR_BASE = "https://tenor.googleapis.com/v2"
 _COLS = 4
 _THUMB_SIZE = 80
 
 
 class GifPicker(QWidget):
-    """Popup grid of GIFs with search, powered by Tenor API v2."""
+    """Popup grid of GIFs with search, powered by server GIF proxy."""
 
     gif_selected = Signal(str)
 
@@ -41,7 +37,7 @@ class GifPicker(QWidget):
 
         self._nam = QNetworkAccessManager(self)
         self._thumb_cache: dict[str, QPixmap] = {}
-        self._current_reply: QNetworkReply | None = None
+        self._fetch_generation: int = 0
 
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -54,7 +50,7 @@ class GifPicker(QWidget):
 
         # Search bar
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search Tenor\u2026")
+        self._search.setPlaceholderText("Search GIFs\u2026")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._on_search_changed)
         root.addWidget(self._search)
@@ -101,51 +97,43 @@ class GifPicker(QWidget):
         if not query:
             self._load_trending()
         else:
-            self._search_tenor(query)
+            self._search_gifs(query)
 
     def _load_trending(self) -> None:
-        url = (
-            f"{_TENOR_BASE}/featured?key={_TENOR_API_KEY}"
-            f"&limit=20&media_filter=tinygif,gif"
-        )
-        self._fetch_results(url)
+        self._fetch_generation += 1
+        gen = self._fetch_generation
+        asyncio.ensure_future(self._fetch_trending(gen))
 
-    def _search_tenor(self, query: str) -> None:
-        url = (
-            f"{_TENOR_BASE}/search?key={_TENOR_API_KEY}"
-            f"&q={quote(query)}&limit=20&media_filter=tinygif,gif"
-        )
-        self._fetch_results(url)
+    def _search_gifs(self, query: str) -> None:
+        self._fetch_generation += 1
+        gen = self._fetch_generation
+        asyncio.ensure_future(self._fetch_search(query, gen))
 
-    def _fetch_results(self, url: str) -> None:
-        # Abort any in-flight request to prevent stale results overwriting newer ones
-        if self._current_reply is not None:
-            self._current_reply.abort()
-            self._current_reply.deleteLater()
-            self._current_reply = None
-        req = QNetworkRequest(QUrl(url))
-        reply = self._nam.get(req)
-        self._current_reply = reply
-        reply.finished.connect(lambda r=reply: self._on_results(r))
-
-    def _on_results(self, reply: QNetworkReply) -> None:
-        # Ignore stale replies that were superseded
-        if reply is not self._current_reply:
-            reply.deleteLater()
-            return
-        self._current_reply = None
-        if reply.error() != QNetworkReply.NetworkError.NoError:
-            log.debug("Tenor fetch failed: %s", reply.errorString())
-            reply.deleteLater()
+    async def _fetch_trending(self, gen: int) -> None:
+        client = AppState.instance().client
+        if client is None:
             return
         try:
-            data = json.loads(bytes(reply.readAll()))
+            resp = await client.gifs.trending(limit=20)
         except Exception:
-            reply.deleteLater()
+            log.debug("GIF trending fetch failed", exc_info=True)
             return
-        reply.deleteLater()
-        results = data.get("results", [])
-        self._populate_grid(results)
+        if gen != self._fetch_generation:
+            return
+        self._populate_grid(resp.results)
+
+    async def _fetch_search(self, query: str, gen: int) -> None:
+        client = AppState.instance().client
+        if client is None:
+            return
+        try:
+            resp = await client.gifs.search(query, limit=20)
+        except Exception:
+            log.debug("GIF search fetch failed", exc_info=True)
+            return
+        if gen != self._fetch_generation:
+            return
+        self._populate_grid(resp.results)
 
     def _populate_grid(self, results: list) -> None:
         # Clear existing
@@ -155,11 +143,11 @@ class GifPicker(QWidget):
                 item.widget().deleteLater()
 
         for i, result in enumerate(results):
-            media = result.get("media_formats", {})
-            tiny = media.get("tinygif", {})
-            full = media.get("gif", {})
-            thumb_url = tiny.get("url", "")
-            gif_url = full.get("url", tiny.get("url", ""))
+            media = result.media_formats
+            tiny = media.get("tinygif")
+            full = media.get("gif")
+            thumb_url = tiny.url if tiny else ""
+            gif_url = (full.url if full else "") or thumb_url
 
             btn = QPushButton()
             btn.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
@@ -186,21 +174,26 @@ class GifPicker(QWidget):
     def _on_thumb_loaded(
         self, reply: QNetworkReply, btn: QPushButton, url: str
     ) -> None:
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            pm = QPixmap()
-            pm.loadFromData(reply.readAll())
-            if not pm.isNull():
-                scaled = pm.scaled(
-                    _THUMB_SIZE * 2,
-                    _THUMB_SIZE * 2,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                scaled.setDevicePixelRatio(2)
-                self._thumb_cache[url] = scaled
-                btn.setIcon(QIcon(scaled))
-                btn.setIconSize(QSize(_THUMB_SIZE - 4, _THUMB_SIZE - 4))
-        reply.deleteLater()
+        try:
+            if reply.error() == QNetworkReply.NetworkError.NoError:
+                pm = QPixmap()
+                pm.loadFromData(reply.readAll())
+                if not pm.isNull():
+                    scaled = pm.scaled(
+                        _THUMB_SIZE * 2,
+                        _THUMB_SIZE * 2,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    scaled.setDevicePixelRatio(2)
+                    self._thumb_cache[url] = scaled
+                    try:
+                        btn.setIcon(QIcon(scaled))
+                        btn.setIconSize(QSize(_THUMB_SIZE - 4, _THUMB_SIZE - 4))
+                    except RuntimeError:
+                        pass  # Button already deleted by grid clear
+        finally:
+            reply.deleteLater()
 
     # -- styling ---------------------------------------------------------------
 

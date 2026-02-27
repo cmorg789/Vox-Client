@@ -9,11 +9,14 @@ from PySide6.QtGui import QDesktopServices, QMovie, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from vox_client.cache import media_cache
 from vox_client.state import AppState
 
 log = logging.getLogger(__name__)
 
-# Shared network manager and pixmap cache
+# Shared network manager and in-memory pixmap cache (not disk-backed since
+# QPixmap isn't serialisable as raw bytes — we go through media_cache for the
+# raw data and decode into _pixmap_cache on the fly).
 _shared_nam: QNetworkAccessManager | None = None
 _pixmap_cache: dict[str, QPixmap] = {}
 
@@ -54,8 +57,6 @@ class AttachmentImageWidget(QLabel):
     ) -> None:
         super().__init__()
         self._url = url
-        self._mime = mime or ""
-        self._is_gif = "gif" in self._mime.lower()
         self._movie_buf: QBuffer | None = None
 
         # Compute display size
@@ -70,9 +71,8 @@ class AttachmentImageWidget(QLabel):
 
         self.setFixedSize(self._display_w, self._display_h)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("border: none; border-radius: 4px;")
 
-        # Show a loading placeholder
+        # Loading placeholder
         c = AppState.instance().theme.colors
         self.setStyleSheet(
             f"background: {c.bg_input}; border: none; border-radius: 4px;"
@@ -81,9 +81,16 @@ class AttachmentImageWidget(QLabel):
         self._fetch()
 
     def _fetch(self) -> None:
-        if self._url in _pixmap_cache and not self._is_gif:
+        # In-memory pixmap hit (already decoded)
+        if self._url in _pixmap_cache:
             self._apply_pixmap(_pixmap_cache[self._url])
             return
+        # Unified cache (memory + disk)
+        cached = media_cache.get(self._url)
+        if cached is not None:
+            self._handle_data(cached)
+            return
+        # Network fetch
         nam = _get_nam()
         req = QNetworkRequest(QUrl(self._url))
         reply = nam.get(req)
@@ -94,25 +101,33 @@ class AttachmentImageWidget(QLabel):
             log.debug("Image fetch failed: %s %s", self._url, reply.errorString())
             reply.deleteLater()
             return
-        data = reply.readAll()
+        data = bytes(reply.readAll())
         reply.deleteLater()
+        media_cache.put(self._url, data)
+        self._handle_data(data)
 
-        if self._is_gif:
-            buf = QBuffer(self)
-            buf.setData(data)
-            buf.open(QBuffer.OpenModeFlag.ReadOnly)
-            self._movie_buf = buf
-            movie = QMovie()
-            movie.setDevice(buf)
-            movie.setScaledSize(QSize(self._display_w, self._display_h))
-            self.setMovie(movie)
-            movie.start()
+    def _handle_data(self, data: bytes) -> None:
+        if data[:6] in (b"GIF89a", b"GIF87a"):
+            self._apply_gif(data)
         else:
             pm = QPixmap()
             pm.loadFromData(data)
             if not pm.isNull():
                 _pixmap_cache[self._url] = pm
                 self._apply_pixmap(pm)
+
+    def _apply_gif(self, data: bytes) -> None:
+        from PySide6.QtCore import QByteArray
+        self._qba = QByteArray(data)
+        self._movie_buf = QBuffer(self)
+        self._movie_buf.setData(self._qba)
+        self._movie_buf.open(QBuffer.OpenModeFlag.ReadOnly)
+        self._movie = QMovie(self)
+        self._movie.setDevice(self._movie_buf)
+        self._movie.setScaledSize(QSize(self._display_w, self._display_h))
+        self.setStyleSheet("border: none; border-radius: 4px; background: transparent;")
+        self.setMovie(self._movie)
+        self._movie.start()
 
     def _apply_pixmap(self, pm: QPixmap) -> None:
         scaled = pm.scaled(

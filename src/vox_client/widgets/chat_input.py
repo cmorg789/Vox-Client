@@ -231,13 +231,14 @@ class ChatInput(QFrame):
         field_layout.addWidget(self._input, stretch=1)
 
         # GIF button inside the field
-        self._gif_btn = QPushButton("GIF")
-        self._gif_btn.setFixedSize(30, 22)
+        self._gif_btn = QPushButton()
+        self._gif_btn.setIcon(tinted_icon(_ICONS_DIR / "file-gif-box.svg", c.text_secondary))
+        self._gif_btn.setIconSize(QSize(18, 18))
+        self._gif_btn.setFixedSize(22, 22)
         self._gif_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._gif_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: 1px solid {c.text_dim}; "
-            f"border-radius: 4px; color: {c.text_dim}; font-size: 9px; font-weight: 700; }}"
-            f"QPushButton:hover {{ border-color: {c.text_primary}; color: {c.text_primary}; }}"
+            f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
         self._gif_btn.clicked.connect(self._on_gif_btn_clicked)
         field_layout.addWidget(self._gif_btn)
@@ -342,10 +343,10 @@ class ChatInput(QFrame):
             f"background: transparent; color: {c.text_primary}; "
             f"border: none; padding: 4px 4px;"
         )
+        self._gif_btn.setIcon(tinted_icon(_ICONS_DIR / "file-gif-box.svg", c.text_secondary))
         self._gif_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: 1px solid {c.text_dim}; "
-            f"border-radius: 4px; color: {c.text_dim}; font-size: 9px; font-weight: 700; }}"
-            f"QPushButton:hover {{ border-color: {c.text_primary}; color: {c.text_primary}; }}"
+            f"QPushButton {{ background: transparent; border: none; border-radius: 11px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
         self._emoji_btn.setIcon(tinted_icon(_ICONS_DIR / "emoticon-outline.svg", c.text_secondary))
         self._emoji_btn.setStyleSheet(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.base_events
+import json
 import logging
 import mimetypes
 import os
@@ -488,11 +489,11 @@ class MainWindow(QMainWindow):
 
         # Use explicit embed_url (e.g. from GIF picker), or detect URL in text
         if embed_url:
-            kwargs["embed"] = embed_url
+            kwargs["embed"] = json.dumps({"url": embed_url, "image": embed_url})
         elif text:
             urls = re.findall(r'https?://[^\s<>"\']+', text)
             if urls:
-                kwargs["embed"] = urls[0]
+                kwargs["embed"] = json.dumps({"url": urls[0]})
 
         if dm_id is not None:
             try:

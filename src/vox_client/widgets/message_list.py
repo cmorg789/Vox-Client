@@ -523,7 +523,8 @@ class MessageList(QScrollArea):
             embed_layout.addWidget(embed_spacer)
 
             embed_widget = EmbedCardWidget(embed)
-            embed_layout.addWidget(embed_widget, stretch=1)
+            embed_layout.addWidget(embed_widget)
+            embed_layout.addStretch()
 
             _place(embed_row)
             row_widgets.append(embed_row)
