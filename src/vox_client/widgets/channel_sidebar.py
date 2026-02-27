@@ -774,7 +774,7 @@ class _ChannelItem(QWidget):
         elif action is settings_act:
             from vox_client.widgets.channel_settings import ChannelSettingsDialog
             dlg = ChannelSettingsDialog(self.item_type, self.feed_id, parent=self.window())
-            dlg.exec()
+            dlg.show()
         elif action is delete_act:
             self._delete_channel()
 

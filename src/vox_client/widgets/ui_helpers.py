@@ -94,7 +94,7 @@ def small_accent_button(text: str, width: int, height: int = 28) -> QPushButton:
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setStyleSheet(
         f"QPushButton {{ background-color: {c.accent_dim}; border: 1px solid {c.accent}; "
-        f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 600; }}"
+        f"color: {c.accent_bright}; border-radius: 4px; font-size: 11px; font-weight: 500; }}"
         f"QPushButton:hover {{ background-color: {c.accent}; border-color: {c.accent_bright}; color: {c.text_on_accent}; }}"
         f"QPushButton:disabled {{ background-color: {c.bg_active}; color: {c.text_dim}; border-color: {c.border}; }}"
     )
@@ -187,8 +187,7 @@ def clear_layout(layout: QLayout) -> None:
 
 
 async def await_dialog(dlg: QDialog) -> None:
-    """Show a modal dialog and await its completion (async-friendly)."""
-    dlg.setModal(True)
+    """Show a dialog and await its completion (async-friendly)."""
     dlg.show()
     future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
     dlg.finished.connect(lambda _result: future.set_result(None))

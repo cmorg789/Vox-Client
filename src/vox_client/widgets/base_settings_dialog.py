@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QEvent, QSize, Qt
 
 log = logging.getLogger(__name__)
 from PySide6.QtWidgets import (
@@ -70,7 +70,7 @@ class BaseSettingsDialog(QDialog):
         self._title_lbl = QLabel(title)
         self._title_lbl.setStyleSheet(
             f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
-            f"letter-spacing: 1px; border: none;"
+            f"border: none;"
         )
         title_layout.addWidget(self._title_lbl)
         title_layout.addStretch()
@@ -202,7 +202,7 @@ class BaseSettingsDialog(QDialog):
         )
         self._title_lbl.setStyleSheet(
             f"color: {c.text_primary}; font-size: 15px; font-weight: 600; "
-            f"letter-spacing: 1px; border: none;"
+            f"border: none;"
         )
         self._close_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=18))
         self._close_btn.setStyleSheet(
@@ -227,3 +227,11 @@ class BaseSettingsDialog(QDialog):
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: ANN001
         self._drag_pos = None
+
+    # -- Close on click-away ---------------------------------------------------
+
+    def event(self, event: QEvent) -> bool:  # noqa: ANN001
+        if event.type() == QEvent.Type.WindowDeactivate:
+            self.reject()
+            return True
+        return super().event(event)
