@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import QBuffer, QByteArray, QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QMovie, QPixmap
@@ -21,6 +22,9 @@ from qasync import asyncSlot
 
 from vox_client.cache import media_cache
 from vox_client.state import AppState
+from vox_client.widgets.icons import tinted_icon
+
+_ICONS_DIR = Path(__file__).resolve().parent.parent / "resources" / "icons"
 
 log = logging.getLogger(__name__)
 
@@ -184,7 +188,14 @@ class AttachmentImageWidget(QLabel):
                 f"Bearer {state.client.http.token}".encode(),
             )
         reply = nam.get(req)
-        reply.finished.connect(lambda r=reply: self._on_loaded(r))
+        reply.finished.connect(lambda r=reply: self._safe_on_loaded(r))
+
+    def _safe_on_loaded(self, reply: QNetworkReply) -> None:
+        try:
+            self._on_loaded(reply)
+        except RuntimeError:
+            # Widget was destroyed before the reply finished (e.g. channel switch)
+            reply.deleteLater()
 
     def _on_loaded(self, reply: QNetworkReply) -> None:
         if reply.error() != QNetworkReply.NetworkError.NoError:
@@ -257,8 +268,12 @@ class AttachmentFileWidget(QFrame):
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(8)
 
-        icon_lbl = QLabel("\U0001f4ce")
-        icon_lbl.setStyleSheet(f"font-size: 18px; border: none;")
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(
+            tinted_icon(_ICONS_DIR / "paperclip.svg", c.text_secondary, size=18)
+            .pixmap(18, 18)
+        )
+        icon_lbl.setStyleSheet("border: none;")
         layout.addWidget(icon_lbl)
 
         info = QVBoxLayout()
@@ -285,10 +300,11 @@ class AttachmentFileWidget(QFrame):
     @asyncSlot()
     async def _download_and_save(self, dest: str) -> None:
         state = AppState.instance()
+        if state.client is None:
+            return
         try:
             resp = await state.client.http.get(self._url)
             resp.raise_for_status()
-            from pathlib import Path
             Path(dest).write_bytes(resp.content)
         except Exception:
             log.error("Failed to download file %s", self._url, exc_info=True)
