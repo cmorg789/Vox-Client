@@ -190,5 +190,5 @@ async def await_dialog(dlg: QDialog) -> None:
     """Show a dialog and await its completion (async-friendly)."""
     dlg.show()
     future: asyncio.Future[None] = asyncio.get_event_loop().create_future()
-    dlg.finished.connect(lambda _result: future.set_result(None))
+    dlg.finished.connect(lambda _result: future.done() or future.set_result(None))
     await future

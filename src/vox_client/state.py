@@ -249,36 +249,34 @@ class AppState(QObject):
     # -- voice ---------------------------------------------------------------
 
     def _add_vox_media_dll_dirs(self) -> None:
-        """Pre-load vendored DLLs for the vox_media native extension (Windows frozen builds).
+        """Adjust DLL search path so the vox_media .pyd can find its vendored DLLs.
 
-        PyInstaller's bootloader calls SetDllDirectory() which overrides the
-        standard DLL search order.  os.add_dll_directory() alone is not
-        sufficient.  We must either redirect SetDllDirectoryW or pre-load
-        each vendored DLL with ctypes so they're in memory when the .pyd
-        loads.  See: pyinstaller/pyinstaller wiki Recipe-Win-Load-External-DLL
+        PyInstaller's bootloader calls SetDllDirectory() pointing at _MEIPASS,
+        which prevents Windows from finding DLLs in subdirectories like
+        vox_media.libs/.  We temporarily redirect SetDllDirectory to the
+        vendored libs dir, then restore it after the import.
+        See: pyinstaller/pyinstaller wiki Recipe-Win-Load-External-DLL
         """
         import ctypes
-        import glob
         import os
         try:
             base = sys._MEIPASS  # type: ignore[attr-defined]  # PyInstaller internal
         except AttributeError:
             return
-        # Collect all DLL directories
-        dll_dirs = []
+        # Add each vendored DLL directory via both mechanisms
         for subdir in (".vox_media.libs", "vox_media.libs", "vox_media"):
             dll_dir = os.path.join(base, subdir)
             if os.path.isdir(dll_dir):
-                dll_dirs.append(dll_dir)
                 os.add_dll_directory(dll_dir)
-        # Pre-load each vendored DLL so they're already in memory
-        for dll_dir in dll_dirs:
-            for dll_path in sorted(glob.glob(os.path.join(dll_dir, "*.dll"))):
-                try:
-                    ctypes.CDLL(dll_path)
-                    log.debug("Pre-loaded DLL: %s", dll_path)
-                except OSError as exc:
-                    log.warning("Failed to pre-load DLL %s: %s", dll_path, exc)
+                log.debug("Added DLL search directory: %s", dll_dir)
+        # Temporarily redirect SetDllDirectory to the vendored libs dir
+        # so that the .pyd's implicit DLL loads find the hash-named DLLs.
+        for subdir in ("vox_media.libs", ".vox_media.libs", "vox_media"):
+            dll_dir = os.path.join(base, subdir)
+            if os.path.isdir(dll_dir):
+                ctypes.windll.kernel32.SetDllDirectoryW(dll_dir)
+                log.debug("SetDllDirectoryW -> %s", dll_dir)
+                break
 
     def _log_missing_dlls(self) -> None:
         """Log which DLLs vox_media.pyd depends on and which are missing."""
@@ -343,11 +341,16 @@ class AppState(QObject):
             self._voice_room_members[room_id] = {m.user_id: m for m in resp.members}
             # Start media client if the native extension is available
             try:
-                # On Windows frozen builds, add the vendored DLL directory to
-                # the DLL search path before importing the native extension.
-                if sys.platform == "win32" and getattr(sys, "frozen", False):
+                # On Windows frozen builds, temporarily redirect the DLL search
+                # path so the .pyd can find its vendored (hash-named) DLLs.
+                _frozen_win = sys.platform == "win32" and getattr(sys, "frozen", False)
+                if _frozen_win:
                     self._add_vox_media_dll_dirs()
                 from vox_sdk._media import VoxMediaClient
+                if _frozen_win:
+                    # Restore SetDllDirectory back to _MEIPASS
+                    import ctypes
+                    ctypes.windll.kernel32.SetDllDirectoryW(sys._MEIPASS)  # type: ignore[attr-defined]
                 # Fetch SFU cert for pinning (self-signed by default)
                 cert_der = None
                 cert_resp = await self.client.voice.get_media_cert()

@@ -33,8 +33,6 @@ try:
         if os.path.isdir(libs_dir):
             for dll in glob.glob(os.path.join(libs_dir, "*.dll")):
                 vox_media_binaries.append((dll, libs_name))
-                # Also copy next to the .pyd for direct adjacency resolution
-                vox_media_binaries.append((dll, "vox_media"))
             print(f"vox_media: collected delvewheel libs from {libs_dir}")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
