@@ -249,17 +249,36 @@ class AppState(QObject):
     # -- voice ---------------------------------------------------------------
 
     def _add_vox_media_dll_dirs(self) -> None:
-        """Add vendored DLL directories to the search path (Windows frozen builds)."""
+        """Pre-load vendored DLLs for the vox_media native extension (Windows frozen builds).
+
+        PyInstaller's bootloader calls SetDllDirectory() which overrides the
+        standard DLL search order.  os.add_dll_directory() alone is not
+        sufficient.  We must either redirect SetDllDirectoryW or pre-load
+        each vendored DLL with ctypes so they're in memory when the .pyd
+        loads.  See: pyinstaller/pyinstaller wiki Recipe-Win-Load-External-DLL
+        """
+        import ctypes
+        import glob
         import os
         try:
             base = sys._MEIPASS  # type: ignore[attr-defined]  # PyInstaller internal
         except AttributeError:
             return
-        for libs_name in (".vox_media.libs", "vox_media.libs"):
-            libs_dir = os.path.join(base, libs_name)
-            if os.path.isdir(libs_dir):
-                os.add_dll_directory(libs_dir)
-                log.debug("Added DLL search directory: %s", libs_dir)
+        # Collect all DLL directories
+        dll_dirs = []
+        for subdir in (".vox_media.libs", "vox_media.libs", "vox_media"):
+            dll_dir = os.path.join(base, subdir)
+            if os.path.isdir(dll_dir):
+                dll_dirs.append(dll_dir)
+                os.add_dll_directory(dll_dir)
+        # Pre-load each vendored DLL so they're already in memory
+        for dll_dir in dll_dirs:
+            for dll_path in sorted(glob.glob(os.path.join(dll_dir, "*.dll"))):
+                try:
+                    ctypes.CDLL(dll_path)
+                    log.debug("Pre-loaded DLL: %s", dll_path)
+                except OSError as exc:
+                    log.warning("Failed to pre-load DLL %s: %s", dll_path, exc)
 
     def _log_missing_dlls(self) -> None:
         """Log which DLLs vox_media.pyd depends on and which are missing."""
