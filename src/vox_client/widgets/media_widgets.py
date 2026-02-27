@@ -93,6 +93,13 @@ class AttachmentImageWidget(QLabel):
         # Network fetch
         nam = _get_nam()
         req = QNetworkRequest(QUrl(self._url))
+        # Attach auth token so the server accepts the request
+        state = AppState.instance()
+        if state.client and state.client.http.token:
+            req.setRawHeader(
+                b"Authorization",
+                f"Bearer {state.client.http.token}".encode(),
+            )
         reply = nam.get(req)
         reply.finished.connect(lambda r=reply: self._on_loaded(r))
 
