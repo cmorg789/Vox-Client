@@ -248,6 +248,19 @@ class AppState(QObject):
 
     # -- voice ---------------------------------------------------------------
 
+    def _add_vox_media_dll_dirs(self) -> None:
+        """Add vendored DLL directories to the search path (Windows frozen builds)."""
+        import os
+        try:
+            base = sys._MEIPASS  # type: ignore[attr-defined]  # PyInstaller internal
+        except AttributeError:
+            return
+        for libs_name in (".vox_media.libs", "vox_media.libs"):
+            libs_dir = os.path.join(base, libs_name)
+            if os.path.isdir(libs_dir):
+                os.add_dll_directory(libs_dir)
+                log.debug("Added DLL search directory: %s", libs_dir)
+
     def _log_missing_dlls(self) -> None:
         """Log which DLLs vox_media.pyd depends on and which are missing."""
         import os
@@ -311,6 +324,10 @@ class AppState(QObject):
             self._voice_room_members[room_id] = {m.user_id: m for m in resp.members}
             # Start media client if the native extension is available
             try:
+                # On Windows frozen builds, add the vendored DLL directory to
+                # the DLL search path before importing the native extension.
+                if sys.platform == "win32" and getattr(sys, "frozen", False):
+                    self._add_vox_media_dll_dirs()
                 from vox_sdk._media import VoxMediaClient
                 # Fetch SFU cert for pinning (self-signed by default)
                 cert_der = None

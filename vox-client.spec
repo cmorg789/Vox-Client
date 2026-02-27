@@ -11,6 +11,7 @@ import warnings
 # on Windows.  Here we just grab the native extension binary itself, since
 # collect_dynamic_libs() misses pyo3 extensions inside a package.
 vox_media_binaries = []
+vox_media_datas = []
 try:
     import vox_media as _vm
     pkg_dir = os.path.dirname(_vm.__file__)
@@ -20,6 +21,16 @@ try:
             if fname.startswith("__"):
                 continue
             vox_media_binaries.append((path, "vox_media"))
+    # Collect delvewheel vendored DLLs on Windows.
+    # delvewheel places them in either .vox_media.libs or vox_media.libs
+    # at the site-packages level (sibling to the package dir).
+    site_dir = os.path.dirname(pkg_dir)
+    for libs_name in (".vox_media.libs", "vox_media.libs"):
+        libs_dir = os.path.join(site_dir, libs_name)
+        if os.path.isdir(libs_dir):
+            for dll in glob.glob(os.path.join(libs_dir, "*.dll")):
+                vox_media_binaries.append((dll, libs_name))
+            print(f"vox_media: collected delvewheel libs from {libs_dir}")
     if vox_media_binaries:
         print(f"vox_media: collected {len(vox_media_binaries)} native binaries")
         for src, dst in vox_media_binaries:
@@ -39,13 +50,13 @@ a = Analysis(
         ("src/vox_client/resources/emoji.json", "vox_client/resources"),
     ],
     hiddenimports=[
-        # PyQt6
-        "PyQt6.QtCore",
-        "PyQt6.QtGui",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtMultimedia",
-        "PyQt6.QtSvg",
-        "PyQt6.QtNetwork",
+        # PySide6
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "PySide6.QtMultimedia",
+        "PySide6.QtSvg",
+        "PySide6.QtNetwork",
         # Async
         "qasync",
         # Theme
