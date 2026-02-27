@@ -36,6 +36,7 @@ a = Analysis(
     datas=[
         ("src/vox_client/resources/icons", "vox_client/resources/icons"),
         ("src/vox_client/resources/fonts", "vox_client/resources/fonts"),
+        ("src/vox_client/resources/emoji.json", "vox_client/resources"),
     ],
     hiddenimports=[
         # PyQt6

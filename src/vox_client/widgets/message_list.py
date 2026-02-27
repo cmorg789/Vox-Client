@@ -159,11 +159,12 @@ class MessageList(QScrollArea):
         self.setStyleSheet(f"background-color: {c.bg_main};")
 
         self._container = QWidget()
-        self._container.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Maximum)
         self._layout = QVBoxLayout(self._container)
-        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._layout.setContentsMargins(0, 4, 0, 4)
         self._layout.setSpacing(0)
+        # Top stretch absorbs empty space so messages anchor to the bottom
+        # (like Discord). Index 0 is always the stretch; messages start at 1.
+        self._layout.addStretch(1)
         self.setWidget(self._container)
 
         self._current_feed_id: int | None = None
@@ -301,6 +302,7 @@ class MessageList(QScrollArea):
         self._loading_older = False
         self._has_more = True
         clear_layout(self._layout)
+        self._layout.addStretch(1)  # re-add top stretch
 
     def _matches_current_context(self, event: object) -> bool:
         """Check if a message event belongs to the currently viewed feed or DM."""
@@ -873,7 +875,8 @@ class MessageList(QScrollArea):
         old_val = scrollbar.value()
 
         # Prepend older messages in chronological order at the top of the layout
-        insert_idx = 0
+        # (index 0 is the top stretch, so messages start at 1)
+        insert_idx = 1
         prev_author: int | None = None
         prev_date: str | None = None
 
