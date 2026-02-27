@@ -86,17 +86,10 @@ jobs:
             ls -la dist/vox-client/_internal/vox_media/ 2>/dev/null || echo "  (directory missing)"
             exit 1
           fi
-          # On Windows, verify vendored DLLs are present (delvewheel .libs dir)
+          # On Windows, verify vendored DLLs are in bundle root (_internal/)
           if [ "$RUNNER_OS" = "Windows" ]; then
-            for d in dist/vox-client/_internal/vox_media.libs dist/vox-client/_internal/.vox_media.libs; do
-              if [ -d "$d" ]; then
-                echo "✓ Vendored DLL directory found: $d"
-                ls -la "$d"
-              fi
-            done
-            # Also check for DLLs alongside the .pyd
-            echo "DLLs in vox_media/:"
-            ls dist/vox-client/_internal/vox_media/*.dll 2>/dev/null || echo "  (none)"
+            echo "DLLs in _internal/ (bundle root):"
+            ls dist/vox-client/_internal/*.dll 2>/dev/null || echo "  (none)"
           fi
 
       - name: List DLL dependencies (Windows)
@@ -107,13 +100,10 @@ jobs:
             Write-Host "=== Dependencies of $($_.Name) ==="
             & .venv\Scripts\python -c "import pefile; pe = pefile.PE(r'$($_.FullName)'); [print(e.dll.decode()) for e in pe.DIRECTORY_ENTRY_IMPORT]"
           }
-          Write-Host "`n=== All DLLs in _internal/ ==="
+          Write-Host "`n=== DLLs in _internal/ (bundle root) ==="
           Get-ChildItem dist\vox-client\_internal\*.dll -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
-          Write-Host "`n=== All files in vox_media/ ==="
+          Write-Host "`n=== Files in vox_media/ ==="
           Get-ChildItem dist\vox-client\_internal\vox_media\ -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
-          Write-Host "`n=== vox_media.libs/ ==="
-          Get-ChildItem dist\vox-client\_internal\vox_media.libs\ -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }
-          if (-not (Test-Path dist\vox-client\_internal\vox_media.libs)) { Write-Host "(not found)" }
 
       - name: Package (macOS)
         if: runner.os == 'macOS'

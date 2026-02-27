@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-import sys
 
 from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
 
@@ -248,53 +247,6 @@ class AppState(QObject):
 
     # -- voice ---------------------------------------------------------------
 
-    def _log_missing_dlls(self) -> None:
-        """Log which DLLs vox_media.pyd depends on and which are missing."""
-        import os
-        import ctypes
-        try:
-            import importlib.util
-            spec = importlib.util.find_spec("vox_media")
-            if spec is None or spec.submodule_search_locations is None:
-                log.warning("  Cannot locate vox_media package for DLL diagnosis")
-                return
-            pkg_dir = spec.submodule_search_locations[0]
-            log.info("  vox_media package dir: %s", pkg_dir)
-            log.info("  Contents: %s", os.listdir(pkg_dir))
-            # Check .libs dirs (delvewheel vendored DLLs)
-            site_dir = os.path.dirname(pkg_dir)
-            for libs_name in ("vox_media.libs", ".vox_media.libs"):
-                libs_dir = os.path.join(site_dir, libs_name)
-                if os.path.isdir(libs_dir):
-                    log.info("  %s contents: %s", libs_name, os.listdir(libs_dir))
-                else:
-                    log.info("  %s directory NOT found", libs_name)
-            # Try to identify the exact missing DLL using LoadLibraryEx
-            pyd_files = [f for f in os.listdir(pkg_dir) if f.endswith(".pyd") and not f.startswith("__")]
-            for pyd in pyd_files:
-                pyd_path = os.path.join(pkg_dir, pyd)
-                log.info("  Attempting LoadLibraryEx on %s ...", pyd)
-                try:
-                    ctypes.WinDLL(pyd_path)
-                    log.info("    Loaded OK (unexpected)")
-                except OSError as e:
-                    log.warning("    LoadLibraryEx failed: %s", e)
-                    # Use Windows API to get dependency info if available
-                    try:
-                        import subprocess
-                        result = subprocess.run(
-                            ["dumpbin", "/dependents", pyd_path],
-                            capture_output=True, text=True, timeout=10,
-                        )
-                        if result.returncode == 0:
-                            log.info("    DLL dependencies (dumpbin):\n%s", result.stdout)
-                        else:
-                            log.debug("    dumpbin not available")
-                    except Exception:
-                        log.debug("    dumpbin not available for dependency listing")
-        except Exception:
-            log.warning("  DLL diagnosis failed", exc_info=True)
-
     async def voice_join(self, room_id: int) -> None:
         """Join a voice room. Leaves current room first if needed."""
         assert self.client is not None
@@ -352,8 +304,6 @@ class AppState(QObject):
                 log.info("Media client connected and polling started")
             except ImportError:
                 log.warning("vox_media native extension not available – audio disabled", exc_info=True)
-                if sys.platform == "win32":
-                    self._log_missing_dlls()
             except Exception:
                 log.error("Failed to start media client for room %d", room_id, exc_info=True)
             self.voice_state_changed.emit()

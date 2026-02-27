@@ -6,10 +6,9 @@ import os
 import sys
 import warnings
 
-# Collect the native vox_media Rust extension (.so / .pyd / .dylib).
-# The hook in hooks/hook-vox_media.py handles delvewheel .libs/ collection
-# on Windows.  Here we just grab the native extension binary itself, since
-# collect_dynamic_libs() misses pyo3 extensions inside a package.
+# Collect the native vox_media Rust extension (.so / .pyd / .dylib) and any
+# delvewheel-vendored DLLs on Windows.  collect_dynamic_libs() misses pyo3
+# extensions inside a package, so we locate them manually.
 vox_media_binaries = []
 vox_media_datas = []
 try:

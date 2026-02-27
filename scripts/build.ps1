@@ -16,6 +16,10 @@ if (-not (Test-Path $Venv)) {
 $Python = Join-Path $Venv "Scripts\python.exe"
 $Pip = Join-Path $Venv "Scripts\pip.exe"
 
+# Install project + SDK (vox-sdk is on PyPI)
+Write-Host "Installing dependencies..."
+& $Pip install -e ".[dev]" --quiet
+
 # Ensure pyinstaller is installed
 try {
     & $Python -m PyInstaller --version 2>&1 | Out-Null
