@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import asyncio.base_events
 import logging
+import mimetypes
+import os
+import re
 import threading
 from pathlib import Path
 
@@ -436,18 +439,18 @@ class MainWindow(QMainWindow):
         except Exception:
             log.error("Failed to disconnect from voice", exc_info=True)
 
-    @asyncSlot(str, list)
-    async def _on_send(self, text: str, file_paths: list) -> None:
+    @asyncSlot(str, list, str)
+    async def _on_send(self, text: str, file_paths: list, embed_url: str = "") -> None:
         if self._state.client is None:
             return
 
+        # Snapshot context for uploads (used to pick upload endpoint)
         dm_id = self._state.current_dm_id
         feed_id = self._state.current_feed_id
 
         # Upload attachments
         file_ids: list[str] = []
         for path in file_paths:
-            import mimetypes
             mime, _ = mimetypes.guess_type(path)
             mime = mime or "application/octet-stream"
             filename = Path(path).name
@@ -465,15 +468,28 @@ class MainWindow(QMainWindow):
                 file_ids.append(resp.file_id)
             except Exception:
                 log.error("Failed to upload file %s", path, exc_info=True)
+            finally:
+                # Clean up temp files from clipboard paste
+                try:
+                    import tempfile
+                    if path.startswith(tempfile.gettempdir()):
+                        os.unlink(path)
+                except OSError:
+                    pass
+
+        # Re-read context after awaits to avoid sending to a stale channel
+        dm_id = self._state.current_dm_id
+        feed_id = self._state.current_feed_id
 
         # Build optional kwargs
         kwargs: dict = {}
         if file_ids:
             kwargs["attachments"] = file_ids
 
-        # Detect first URL in text for embed resolution
-        if text:
-            import re
+        # Use explicit embed_url (e.g. from GIF picker), or detect URL in text
+        if embed_url:
+            kwargs["embed"] = embed_url
+        elif text:
             urls = re.findall(r'https?://[^\s<>"\']+', text)
             if urls:
                 kwargs["embed"] = urls[0]

@@ -153,7 +153,7 @@ class _RichInput(QTextEdit):
 class ChatInput(QFrame):
     """Bottom input bar: input field with [+] button inside, ↵ hint outside."""
 
-    message_sent = Signal(str, list)  # (text, file_paths)
+    message_sent = Signal(str, list, str)  # (text, file_paths, embed_url)
     typing = Signal()
 
     def __init__(self) -> None:
@@ -376,7 +376,7 @@ class ChatInput(QFrame):
             paths = list(self._staged_attachments)
             self._staged_attachments.clear()
             self._clear_attachment_preview()
-            self.message_sent.emit(text, paths)
+            self.message_sent.emit(text, paths, "")
 
     def _on_text_changed(self) -> None:
         if self._input.text():
@@ -397,6 +397,7 @@ class ChatInput(QFrame):
     def _on_image_pasted(self, image: object) -> None:
         """Handle an image pasted from the clipboard."""
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.close()
         image.save(tmp.name, "PNG")
         self._stage_file(tmp.name)
 
@@ -506,7 +507,8 @@ class ChatInput(QFrame):
     def _on_gif_selected(self, gif_url: str) -> None:
         if self._gif_picker is not None:
             self._gif_picker.hide()
-        self.message_sent.emit(gif_url, [])
+        # Send GIF URL as empty body with embed — avoid double-render as text + embed
+        self.message_sent.emit("", [], gif_url)
 
     def focus_input(self) -> None:
         self._input.setFocus()

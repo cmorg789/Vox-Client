@@ -41,6 +41,7 @@ class GifPicker(QWidget):
 
         self._nam = QNetworkAccessManager(self)
         self._thumb_cache: dict[str, QPixmap] = {}
+        self._current_reply: QNetworkReply | None = None
 
         self._search_timer = QTimer()
         self._search_timer.setSingleShot(True)
@@ -117,11 +118,22 @@ class GifPicker(QWidget):
         self._fetch_results(url)
 
     def _fetch_results(self, url: str) -> None:
+        # Abort any in-flight request to prevent stale results overwriting newer ones
+        if self._current_reply is not None:
+            self._current_reply.abort()
+            self._current_reply.deleteLater()
+            self._current_reply = None
         req = QNetworkRequest(QUrl(url))
         reply = self._nam.get(req)
+        self._current_reply = reply
         reply.finished.connect(lambda r=reply: self._on_results(r))
 
     def _on_results(self, reply: QNetworkReply) -> None:
+        # Ignore stale replies that were superseded
+        if reply is not self._current_reply:
+            reply.deleteLater()
+            return
+        self._current_reply = None
         if reply.error() != QNetworkReply.NetworkError.NoError:
             log.debug("Tenor fetch failed: %s", reply.errorString())
             reply.deleteLater()
