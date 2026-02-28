@@ -12,7 +12,7 @@ dependencies = [
     "qasync>=0.27",
     "catppuccin==2.5",
     # vox-sdk and vox-media are published on PyPI.
-    "vox-sdk[media,mls]>=0.1",
+    "vox-sdk[media]>=0.1",
 ]
 
 [project.optional-dependencies]

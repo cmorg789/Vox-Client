@@ -132,10 +132,6 @@ class AppState(QObject):
         self._speaking_users: set[int] = set()  # user_ids currently speaking
         self._media_poll_timer: QTimer | None = None
 
-        # E2EE / MLS
-        self._crypto: object | None = None  # CryptoManager, lazy-imported
-        self._pending_plaintext: dict[int, str] = {}  # dm_id → plaintext for own send echo
-
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
 
@@ -146,76 +142,6 @@ class AppState(QObject):
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
-
-    # -- E2EE / MLS ----------------------------------------------------------
-
-    @property
-    def crypto(self):
-        """Return the CryptoManager if available, else None."""
-        return self._crypto
-
-    async def init_crypto(self) -> None:
-        """Initialise MLS encryption for the current user/device."""
-        from vox_sdk.crypto.manager import CryptoManager
-
-        if self.client is None or self.user_id is None:
-            return
-
-        import uuid
-
-        from PySide6.QtCore import QSettings
-
-        s = QSettings("Vox", "VoxClient")
-        device_id = s.value("mls/device_id")
-        if not device_id:
-            device_id = str(uuid.uuid4())
-            s.setValue("mls/device_id", device_id)
-
-        db_dir = Path(
-            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
-        ) / "Vox"
-        db_dir.mkdir(parents=True, exist_ok=True)
-        db_path = str(db_dir / "mls.db")
-
-        crypto = CryptoManager(self.client, db_path=db_path)
-        await crypto.initialize(self.user_id, device_id)
-
-        # Register device (ignore conflict if already registered)
-        try:
-            import platform
-            await crypto.register_device(platform.node() or "Vox Desktop")
-        except Exception:
-            log.debug("Device registration skipped (likely already registered)", exc_info=True)
-
-        try:
-            await crypto.refresh_key_packages()
-        except Exception:
-            log.debug("Key package refresh failed (server may not support E2EE yet)", exc_info=True)
-
-        self._crypto = crypto
-        log.info("MLS crypto initialised")
-
-    def decrypt_body(self, d: dict) -> None:
-        """If *d* has an opaque_blob but no body, decrypt in-place."""
-        blob = d.get("opaque_blob")
-        if not blob or d.get("body") is not None:
-            return
-        # MLS cannot decrypt messages we sent ourselves — use stashed plaintext
-        if d.get("author_id") == self.user_id:
-            dm_id = d.get("dm_id")
-            if dm_id is not None and dm_id in self._pending_plaintext:
-                d["body"] = self._pending_plaintext.pop(dm_id)
-            return
-        if self._crypto is None:
-            d["body"] = "[Encrypted message]"
-            return
-        dm_id = d.get("dm_id")
-        feed_id = d.get("feed_id")
-        try:
-            d["body"] = self._crypto.decrypt_message(blob, dm_id=dm_id, feed_id=feed_id)
-        except Exception:
-            log.debug("Failed to decrypt message %s", d.get("msg_id"), exc_info=True)
-            d["body"] = "[Encrypted message]"
 
     # -- helpers -------------------------------------------------------------
 
@@ -679,10 +605,6 @@ class AppState(QObject):
             def _apply(e=event):  # noqa: ANN001
                 from vox_client.cache import message_cache
                 d = _event_to_msg_dict(e)
-                self.decrypt_body(d)
-                # Propagate decrypted text so signal listeners see it
-                if d["body"] is not None and getattr(e, "body", None) is None:
-                    e.body = d["body"]
                 key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
                 message_cache.append(key, d)
                 self.message_received.emit(e)

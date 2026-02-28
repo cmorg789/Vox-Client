@@ -297,7 +297,6 @@ class MessageList(QScrollArea):
             self._has_more = meta.has_more
             self._oldest_msg_id = meta.oldest_msg_id
             for d in msgs_dicts:
-                state.decrypt_body(d)
                 self._add_message(
                     d.get("author_id"), d.get("timestamp", 0), d.get("body"),
                     msg_id=d.get("msg_id"),
@@ -318,20 +317,6 @@ class MessageList(QScrollArea):
             return
 
         self._has_more = len(result.messages) >= 150
-
-        # Decrypt encrypted messages in-place
-        for msg in result.messages:
-            if getattr(msg, "opaque_blob", None) and msg.body is None:
-                if state.crypto:
-                    try:
-                        msg.body = state.crypto.decrypt_message(
-                            msg.opaque_blob, dm_id=dm_id,
-                        )
-                    except Exception:
-                        log.debug("Failed to decrypt msg %s", msg.msg_id, exc_info=True)
-                        msg.body = "[Encrypted message]"
-                else:
-                    msg.body = "[Encrypted message]"
 
         for msg in reversed(result.messages):
             self._add_message(
@@ -938,21 +923,6 @@ class MessageList(QScrollArea):
             return
 
         self._has_more = len(result.messages) >= 150
-
-        # Decrypt encrypted DM messages in-place
-        if dm_id is not None:
-            for msg in result.messages:
-                if getattr(msg, "opaque_blob", None) and msg.body is None:
-                    if state.crypto:
-                        try:
-                            msg.body = state.crypto.decrypt_message(
-                                msg.opaque_blob, dm_id=dm_id,
-                            )
-                        except Exception:
-                            log.debug("Failed to decrypt msg %s", msg.msg_id, exc_info=True)
-                            msg.body = "[Encrypted message]"
-                    else:
-                        msg.body = "[Encrypted message]"
 
         # Update oldest cursor (messages are newest-first, last is oldest)
         self._oldest_msg_id = result.messages[-1].msg_id
