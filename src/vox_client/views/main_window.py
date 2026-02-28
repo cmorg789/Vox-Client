@@ -526,6 +526,9 @@ class MainWindow(QMainWindow):
                         pids = dm_obj.participant_ids if dm_obj else []
                         await crypto.create_group_for_dm(dm_id, pids)
                     blob = crypto.encrypt_message(text, dm_id=dm_id)
+                    # Stash plaintext so the gateway echo can display it
+                    # (MLS can't decrypt our own ciphertext)
+                    self._state._pending_plaintext[dm_id] = text
                     await self._state.client.dms.send_message(
                         dm_id, opaque_blob=blob, **kwargs,
                     )

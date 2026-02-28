@@ -134,6 +134,7 @@ class AppState(QObject):
 
         # E2EE / MLS
         self._crypto: object | None = None  # CryptoManager, lazy-imported
+        self._pending_plaintext: dict[int, str] = {}  # dm_id → plaintext for own send echo
 
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
@@ -198,6 +199,12 @@ class AppState(QObject):
         """If *d* has an opaque_blob but no body, decrypt in-place."""
         blob = d.get("opaque_blob")
         if not blob or d.get("body") is not None:
+            return
+        # MLS cannot decrypt messages we sent ourselves — use stashed plaintext
+        if d.get("author_id") == self.user_id:
+            dm_id = d.get("dm_id")
+            if dm_id is not None and dm_id in self._pending_plaintext:
+                d["body"] = self._pending_plaintext.pop(dm_id)
             return
         if self._crypto is None:
             d["body"] = "[Encrypted message]"
