@@ -420,6 +420,12 @@ class MainWindow(QMainWindow):
         log.info("Server data loaded, populating UI")
         self.populate()
 
+        # Initialise MLS encryption (non-blocking — DMs fall back to plaintext if unavailable)
+        try:
+            await state.init_crypto()
+        except Exception:
+            log.warning("MLS crypto unavailable, DMs will use plaintext", exc_info=True)
+
     @asyncSlot(int)
     async def _on_feed_selected(self, feed_id: int) -> None:
         try:
@@ -512,9 +518,21 @@ class MainWindow(QMainWindow):
 
         if dm_id is not None:
             try:
-                await self._state.client.dms.send_message(
-                    dm_id, body=text or None, **kwargs,
-                )
+                crypto = self._state.crypto
+                if crypto and text:
+                    # Ensure MLS group exists for this DM
+                    if not crypto.has_group(dm_id=dm_id):
+                        dm_obj = self._state._dms.get(dm_id)
+                        pids = dm_obj.participant_ids if dm_obj else []
+                        await crypto.create_group_for_dm(dm_id, pids)
+                    blob = crypto.encrypt_message(text, dm_id=dm_id)
+                    await self._state.client.dms.send_message(
+                        dm_id, opaque_blob=blob, **kwargs,
+                    )
+                else:
+                    await self._state.client.dms.send_message(
+                        dm_id, body=text or None, **kwargs,
+                    )
             except Exception:
                 log.error("Failed to send DM message to dm %d", dm_id, exc_info=True)
             return

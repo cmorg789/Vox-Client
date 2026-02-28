@@ -934,20 +934,32 @@ class _AudioVideoPage(QWidget):
             set_status(self._status, f"speaker test failed: {exc}", "error")
             self._speaker_test_btn.setEnabled(True)
 
-    def _on_save(self) -> None:
+    @asyncSlot()
+    async def _on_save(self) -> None:
         from PySide6.QtCore import QSettings
         settings = QSettings("Vox", "VoxClient")
         settings.setValue("av/camera_device", self._camera_combo.currentData())
         settings.setValue("av/input_device", self._input_combo.currentData())
         settings.setValue("av/output_device", self._output_combo.currentData())
+        # Save device description for cpal name matching in the Rust media layer.
+        input_text = self._input_combo.currentText()
+        output_text = self._output_combo.currentText()
+        settings.setValue("av/input_device_name", None if input_text == "Default" else input_text)
+        settings.setValue("av/output_device_name", None if output_text == "Default" else output_text)
         settings.setValue("av/noise_gate", self._mic_slider.value())
         settings.setValue("av/input_volume", self._input_vol_slider.value())
         settings.setValue("av/output_volume", self._output_vol_slider.value())
-        # Push to live media client if in a voice call
         state = AppState.instance()
-        state.voice_set_input_volume(_log_volume(self._input_vol_slider.value()))
-        state.voice_set_output_volume(_log_volume(self._output_vol_slider.value()))
-        state.voice_set_noise_gate(self._mic_slider.value() / 100.0)
+        if state.voice_room_id is not None:
+            # Reconnect media client so new device / volume settings take effect.
+            # Stop mic preview first to release the device for vox_media.
+            self._stop_mic_capture()
+            room_id = state.voice_room_id
+            await state.voice_join(room_id)
+        else:
+            state.voice_set_input_volume(_log_volume(self._input_vol_slider.value()))
+            state.voice_set_output_volume(_log_volume(self._output_vol_slider.value()))
+            state.voice_set_noise_gate(self._mic_slider.value() / 100.0)
         set_status(self._status, "saved", "success")
 
     def showEvent(self, event) -> None:  # noqa: ANN001

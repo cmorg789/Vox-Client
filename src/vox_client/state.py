@@ -31,6 +31,7 @@ def _event_to_msg_dict(event: object) -> dict:
         "dm_id": getattr(event, "dm_id", None),
         "author_id": getattr(event, "author_id", None),
         "body": getattr(event, "body", None),
+        "opaque_blob": getattr(event, "opaque_blob", None),
         "timestamp": getattr(event, "timestamp", 0),
         "attachments": getattr(event, "attachments", []),
         "embed": getattr(event, "embed", None),
@@ -131,6 +132,9 @@ class AppState(QObject):
         self._speaking_users: set[int] = set()  # user_ids currently speaking
         self._media_poll_timer: QTimer | None = None
 
+        # E2EE / MLS
+        self._crypto: object | None = None  # CryptoManager, lazy-imported
+
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
 
@@ -141,6 +145,70 @@ class AppState(QObject):
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    # -- E2EE / MLS ----------------------------------------------------------
+
+    @property
+    def crypto(self):
+        """Return the CryptoManager if available, else None."""
+        return self._crypto
+
+    async def init_crypto(self) -> None:
+        """Initialise MLS encryption for the current user/device."""
+        from vox_sdk.crypto.manager import CryptoManager
+
+        if self.client is None or self.user_id is None:
+            return
+
+        import uuid
+
+        from PySide6.QtCore import QSettings
+
+        s = QSettings("Vox", "VoxClient")
+        device_id = s.value("mls/device_id")
+        if not device_id:
+            device_id = str(uuid.uuid4())
+            s.setValue("mls/device_id", device_id)
+
+        db_dir = Path(
+            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+        ) / "Vox"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db_path = str(db_dir / "mls.db")
+
+        crypto = CryptoManager(self.client, db_path=db_path)
+        await crypto.initialize(self.user_id, device_id)
+
+        # Register device (ignore conflict if already registered)
+        try:
+            import platform
+            await crypto.register_device(platform.node() or "Vox Desktop")
+        except Exception:
+            log.debug("Device registration skipped (likely already registered)", exc_info=True)
+
+        try:
+            await crypto.refresh_key_packages()
+        except Exception:
+            log.debug("Key package refresh failed (server may not support E2EE yet)", exc_info=True)
+
+        self._crypto = crypto
+        log.info("MLS crypto initialised")
+
+    def decrypt_body(self, d: dict) -> None:
+        """If *d* has an opaque_blob but no body, decrypt in-place."""
+        blob = d.get("opaque_blob")
+        if not blob or d.get("body") is not None:
+            return
+        if self._crypto is None:
+            d["body"] = "[Encrypted message]"
+            return
+        dm_id = d.get("dm_id")
+        feed_id = d.get("feed_id")
+        try:
+            d["body"] = self._crypto.decrypt_message(blob, dm_id=dm_id, feed_id=feed_id)
+        except Exception:
+            log.debug("Failed to decrypt message %s", d.get("msg_id"), exc_info=True)
+            d["body"] = "[Encrypted message]"
 
     # -- helpers -------------------------------------------------------------
 
@@ -288,14 +356,18 @@ class AppState(QObject):
                 mc.set_input_volume(_log_volume(input_vol))
                 mc.set_output_volume(_log_volume(output_vol))
                 mc.set_noise_gate(gate / 100.0)
-                log.info("Connecting media client to %s (room=%d, user=%d)",
-                         resp.media_url, room_id, self.user_id)
+                input_dev = settings.value("av/input_device_name")
+                output_dev = settings.value("av/output_device_name")
+                log.info("Connecting media client to %s (room=%d, user=%d, in=%s, out=%s)",
+                         resp.media_url, room_id, self.user_id, input_dev, output_dev)
                 mc.connect(
                     url=resp.media_url,
                     token=resp.media_token,
                     room_id=room_id,
                     user_id=self.user_id,
                     cert_der=cert_der,
+                    input_device=input_dev,
+                    output_device=output_dev,
                 )
                 self._media_client = mc
                 self._media_url = resp.media_url
@@ -599,8 +671,13 @@ class AppState(QObject):
         async def _on_message_create(event):  # noqa: ANN001
             def _apply(e=event):  # noqa: ANN001
                 from vox_client.cache import message_cache
+                d = _event_to_msg_dict(e)
+                self.decrypt_body(d)
+                # Propagate decrypted text so signal listeners see it
+                if d["body"] is not None and getattr(e, "body", None) is None:
+                    e.body = d["body"]
                 key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
-                message_cache.append(key, _event_to_msg_dict(e))
+                message_cache.append(key, d)
                 self.message_received.emit(e)
             self._run_on_main.emit(_apply)
 
@@ -950,12 +1027,16 @@ class AppState(QObject):
                     if rid == self.voice_room_id and self._media_client is not None:
                         token = getattr(e, "media_token", None)
                         if token and self._media_url is not None:
+                            from PySide6.QtCore import QSettings as _QS
+                            _s = _QS("Vox", "VoxClient")
                             self._media_client.connect(
                                 url=self._media_url,
                                 token=token,
                                 room_id=rid,
                                 user_id=self.user_id,
                                 cert_der=self._media_cert_der,
+                                input_device=_s.value("av/input_device_name"),
+                                output_device=_s.value("av/output_device_name"),
                             )
                             log.info("Media client reconnected with refreshed token")
                         else:
