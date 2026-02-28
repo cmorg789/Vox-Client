@@ -31,7 +31,6 @@ def _event_to_msg_dict(event: object) -> dict:
         "dm_id": getattr(event, "dm_id", None),
         "author_id": getattr(event, "author_id", None),
         "body": getattr(event, "body", None),
-        "opaque_blob": getattr(event, "opaque_blob", None),
         "timestamp": getattr(event, "timestamp", 0),
         "attachments": getattr(event, "attachments", []),
         "embed": getattr(event, "embed", None),
