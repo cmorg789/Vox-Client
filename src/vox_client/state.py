@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
@@ -134,7 +135,7 @@ class AppState(QObject):
 
         # E2EE / MLS
         self._crypto: object | None = None  # CryptoManager, lazy-imported
-        self._pending_plaintext: dict[int, str] = {}  # dm_id → plaintext for own send echo
+        self._pending_plaintext: dict[int, deque[str]] = {}  # dm_id → FIFO of plaintexts for own send echoes
 
         # Connect the thread bridge so callables are executed on the main thread
         self._run_on_main.connect(self._execute_on_main)
@@ -203,9 +204,13 @@ class AppState(QObject):
         # MLS cannot decrypt messages we sent ourselves — use stashed plaintext
         if d.get("author_id") == self.user_id:
             dm_id = d.get("dm_id")
-            if dm_id is not None and dm_id in self._pending_plaintext:
-                d["body"] = self._pending_plaintext.pop(dm_id)
-            return
+            q = self._pending_plaintext.get(dm_id) if dm_id is not None else None
+            if q:
+                d["body"] = q.popleft()
+                if not q:
+                    del self._pending_plaintext[dm_id]
+                return
+            # No stashed plaintext (other device or already consumed) — fall through
         if self._crypto is None:
             d["body"] = "[Encrypted message]"
             return

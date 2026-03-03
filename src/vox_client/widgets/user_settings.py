@@ -944,8 +944,14 @@ class _AudioVideoPage(QWidget):
         # Save device description for cpal name matching in the Rust media layer.
         input_text = self._input_combo.currentText()
         output_text = self._output_combo.currentText()
-        settings.setValue("av/input_device_name", None if input_text == "Default" else input_text)
-        settings.setValue("av/output_device_name", None if output_text == "Default" else output_text)
+        if input_text == "Default":
+            settings.remove("av/input_device_name")
+        else:
+            settings.setValue("av/input_device_name", input_text)
+        if output_text == "Default":
+            settings.remove("av/output_device_name")
+        else:
+            settings.setValue("av/output_device_name", output_text)
         settings.setValue("av/noise_gate", self._mic_slider.value())
         settings.setValue("av/input_volume", self._input_vol_slider.value())
         settings.setValue("av/output_volume", self._output_vol_slider.value())
