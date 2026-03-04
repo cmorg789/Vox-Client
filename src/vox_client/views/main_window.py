@@ -512,9 +512,34 @@ class MainWindow(QMainWindow):
 
         if dm_id is not None:
             try:
-                await self._state.client.dms.send_message(
-                    dm_id, body=text or None, **kwargs,
-                )
+                crypto = self._state.crypto
+                if crypto and text:
+                    # Ensure MLS group exists for this DM
+                    if not crypto.has_group(dm_id=dm_id):
+                        dm_obj = self._state._dms.get(dm_id)
+                        pids = dm_obj.participant_ids if dm_obj else []
+                        await crypto.create_group_for_dm(dm_id, pids)
+                    blob = crypto.encrypt_message(text, dm_id=dm_id)
+                    # Stash plaintext so the gateway echo can display it
+                    # (MLS can't decrypt our own ciphertext)
+                    from collections import deque
+                    q = self._state._pending_plaintext.setdefault(dm_id, deque())
+                    q.append(text)
+                    try:
+                        await self._state.client.dms.send_message(
+                            dm_id, opaque_blob=blob, **kwargs,
+                        )
+                    except Exception:
+                        # Remove the stashed plaintext since the send failed
+                        if q:
+                            q.pop()
+                        if not q and dm_id in self._state._pending_plaintext:
+                            del self._state._pending_plaintext[dm_id]
+                        raise
+                else:
+                    await self._state.client.dms.send_message(
+                        dm_id, body=text or None, **kwargs,
+                    )
             except Exception:
                 log.error("Failed to send DM message to dm %d", dm_id, exc_info=True)
             return

@@ -318,19 +318,23 @@ class MessageList(QScrollArea):
 
         self._has_more = len(result.messages) >= 150
 
-        for msg in reversed(result.messages):
+        # Convert to dicts (chronological) and decrypt via the shared path
+        chrono = [m.model_dump() for m in reversed(result.messages)]
+        for d in chrono:
+            state.decrypt_body(d)
+
+        for d in chrono:
             self._add_message(
-                msg.author_id, msg.timestamp, msg.body,
-                msg_id=msg.msg_id,
-                attachments=msg.attachments or None,
-                embed=msg.embed,
+                d.get("author_id"), d.get("timestamp", 0), d.get("body"),
+                msg_id=d.get("msg_id"),
+                attachments=d.get("attachments") or None,
+                embed=d.get("embed"),
             )
 
         if result.messages:
             self._oldest_msg_id = result.messages[-1].msg_id
 
         # Populate cache
-        chrono = [m.model_dump() for m in reversed(result.messages)]
         meta = ChannelMeta(
             oldest_msg_id=self._oldest_msg_id,
             newest_msg_id=result.messages[0].msg_id if result.messages else None,
@@ -927,6 +931,11 @@ class MessageList(QScrollArea):
         # Update oldest cursor (messages are newest-first, last is oldest)
         self._oldest_msg_id = result.messages[-1].msg_id
 
+        # Convert to dicts (chronological) and decrypt via the shared path
+        chrono_older = [m.model_dump() for m in reversed(result.messages)]
+        for d in chrono_older:
+            state.decrypt_body(d)
+
         # Save scroll state so we can restore the viewport position
         scrollbar = self.verticalScrollBar()
         old_max = scrollbar.maximum()
@@ -938,17 +947,17 @@ class MessageList(QScrollArea):
         prev_author: int | None = None
         prev_date: str | None = None
 
-        for msg in reversed(result.messages):
+        for d in chrono_older:
             insert_idx, prev_author, prev_date = self._add_message(
-                msg.author_id,
-                msg.timestamp,
-                msg.body,
-                msg_id=msg.msg_id,
+                d.get("author_id"),
+                d.get("timestamp", 0),
+                d.get("body"),
+                msg_id=d.get("msg_id"),
                 insert_idx=insert_idx,
                 prev_author=prev_author,
                 prev_date=prev_date,
-                attachments=msg.attachments or None,
-                embed=msg.embed,
+                attachments=d.get("attachments") or None,
+                embed=d.get("embed"),
             )
 
         # Fix duplicate author header at the pagination boundary:
@@ -987,13 +996,12 @@ class MessageList(QScrollArea):
 
         # Extend the cache with the older messages
         cache_key = f"dm:{dm_id}" if dm_id is not None else f"feed:{feed_id}"
-        chrono = [m.model_dump() for m in reversed(result.messages)]
         updated_meta = ChannelMeta(
             oldest_msg_id=self._oldest_msg_id,
             newest_msg_id=(message_cache._meta[cache_key].newest_msg_id
                            if cache_key in message_cache._meta else None),
             has_more=self._has_more,
         )
-        message_cache.prepend(cache_key, chrono, updated_meta)
+        message_cache.prepend(cache_key, chrono_older, updated_meta)
 
         self._loading_older = False
