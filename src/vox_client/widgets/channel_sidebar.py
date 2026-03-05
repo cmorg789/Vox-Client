@@ -841,6 +841,14 @@ class _VoiceMemberEntry(QWidget):
                 vm = members[user_id]
                 break
 
+        if vm and vm.video:
+            vid_icon = QLabel()
+            vid_icon.setPixmap(
+                tinted_icon(_ICONS_DIR / "video.svg", c.text_dim, size=10).pixmap(QSize(10, 10))
+            )
+            vid_icon.setFixedSize(10, 10)
+            layout.addWidget(vid_icon)
+
         if vm and vm.deaf:
             deaf_icon = QLabel()
             deaf_icon.setPixmap(

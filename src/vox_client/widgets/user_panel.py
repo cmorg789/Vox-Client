@@ -7,7 +7,19 @@ import logging
 log = logging.getLogger(__name__)
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QSlider,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
+)
 
 from vox_client._frozen import ICONS_DIR as _ICONS_DIR
 from vox_client.state import AppState
@@ -52,6 +64,39 @@ class VoiceStatusBar(QFrame):
         )
         layout.addWidget(self._room_label, stretch=1)
 
+        # Camera combo button: icon toggles video, arrow opens settings menu
+        self._video_on = False
+        self._video_btn = QPushButton()
+        self._video_btn.setIcon(tinted_icon(_ICONS_DIR / "video-off.svg", c.text_dim, size=14))
+        self._video_btn.setIconSize(QSize(14, 14))
+        self._video_btn.setFixedSize(20, 20)
+        self._video_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._video_btn.setToolTip("Camera")
+        self._btn_style = (
+            f"QPushButton {{ background: transparent; border: none; border-radius: 3px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
+        )
+        self._btn_style_active = (
+            f"QPushButton {{ background: transparent; border: 1px solid {c.accent}; border-radius: 3px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
+        )
+        self._video_btn.setStyleSheet(self._btn_style)
+        self._video_btn.clicked.connect(self._toggle_video)
+        layout.addWidget(self._video_btn)
+
+        # Dropdown arrow for video settings
+        self._video_menu_btn = QPushButton("\u25BE")  # ▾
+        self._video_menu_btn.setFixedSize(14, 20)
+        self._video_menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._video_menu_btn.setToolTip("Video settings")
+        self._video_menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {c.text_dim}; font-size: 10px; padding: 0px; }}"
+            f"QPushButton:hover {{ color: {c.text_primary}; }}"
+        )
+        self._video_menu_btn.clicked.connect(self._show_video_menu)
+        layout.addWidget(self._video_menu_btn)
+
         # Disconnect button
         self._disconnect_btn = QPushButton()
         self._disconnect_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
@@ -59,15 +104,13 @@ class VoiceStatusBar(QFrame):
         self._disconnect_btn.setFixedSize(20, 20)
         self._disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._disconnect_btn.setToolTip("Disconnect")
-        self._disconnect_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; border-radius: 3px; }}"
-            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
-        )
+        self._disconnect_btn.setStyleSheet(self._btn_style)
         self._disconnect_btn.clicked.connect(self.disconnect_clicked.emit)
         layout.addWidget(self._disconnect_btn)
 
         # Auto-refresh on voice state changes
         state.voice_state_changed.connect(self.refresh)
+        state.video_state_changed.connect(self._on_video_state_changed)
         self.hide()
 
     def refresh(self) -> None:
@@ -90,11 +133,204 @@ class VoiceStatusBar(QFrame):
         self._room_label.setStyleSheet(
             f"color: {c.text_primary}; font-size: 13px; font-weight: 600;"
         )
-        self._disconnect_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
-        self._disconnect_btn.setStyleSheet(
+        self._btn_style = (
             f"QPushButton {{ background: transparent; border: none; border-radius: 3px; }}"
             f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
         )
+        self._btn_style_active = (
+            f"QPushButton {{ background: transparent; border: 1px solid {c.accent}; border-radius: 3px; }}"
+            f"QPushButton:hover {{ background-color: {c.bg_hover}; }}"
+        )
+        self._disconnect_btn.setIcon(tinted_icon(_ICONS_DIR / "close.svg", c.text_dim, size=12))
+        self._disconnect_btn.setStyleSheet(self._btn_style)
+        self._update_video_btn()
+        self._video_menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {c.text_dim}; font-size: 10px; padding: 0px; }}"
+            f"QPushButton:hover {{ color: {c.text_primary}; }}"
+        )
+
+    # -- video controls --------------------------------------------------------
+
+    def _toggle_video(self) -> None:
+        state = AppState.instance()
+        state.voice_toggle_video()
+        self._video_on = state.voice_self_video
+        self._update_video_btn()
+
+    def _on_video_state_changed(self) -> None:
+        state = AppState.instance()
+        self._video_on = state.voice_self_video if state.voice_room_id else False
+        self._update_video_btn()
+
+    def _update_video_btn(self) -> None:
+        c = AppState.instance().theme.colors
+        if self._video_on:
+            self._video_btn.setIcon(tinted_icon(_ICONS_DIR / "video.svg", c.accent, size=14))
+            self._video_btn.setStyleSheet(self._btn_style_active)
+            self._video_btn.setToolTip("Turn off camera")
+        else:
+            self._video_btn.setIcon(tinted_icon(_ICONS_DIR / "video-off.svg", c.text_dim, size=14))
+            self._video_btn.setStyleSheet(self._btn_style)
+            self._video_btn.setToolTip("Camera")
+
+    @staticmethod
+    def _load_video_settings() -> tuple[int, int, int, int]:
+        """Load saved video settings, returning (width, height, fps, bitrate_kbps)."""
+        from PySide6.QtCore import QSettings
+        s = QSettings("Vox", "VoxClient")
+        w = int(s.value("video/width", 1280))
+        h = int(s.value("video/height", 720))
+        fps = int(s.value("video/fps", 30))
+        kbps = int(s.value("video/bitrate", 1000))
+        return w, h, fps, kbps
+
+    @staticmethod
+    def _save_video_settings(w: int, h: int, fps: int, kbps: int) -> None:
+        from PySide6.QtCore import QSettings
+        s = QSettings("Vox", "VoxClient")
+        s.setValue("video/width", w)
+        s.setValue("video/height", h)
+        s.setValue("video/fps", fps)
+        s.setValue("video/bitrate", kbps)
+
+    _RES_PRESETS = [
+        ("480p", 640, 480),
+        ("720p", 1280, 720),
+        ("1080p", 1920, 1080),
+        ("1440p", 2560, 1440),
+        ("4K", 3840, 2160),
+        ("Native", 0, 0),
+    ]
+    _FPS_OPTIONS = [15, 24, 30, 60]
+    _BITRATE_OPTIONS = [
+        ("Low (250 kbps)", 250),
+        ("Medium (500 kbps)", 500),
+        ("High (1 Mbps)", 1000),
+        ("Very High (2 Mbps)", 2000),
+        ("Ultra (4 Mbps)", 4000),
+    ]
+
+    def _show_video_menu(self) -> None:
+        state = AppState.instance()
+        c = state.theme.colors
+        saved_w, saved_h, saved_fps, saved_kbps = self._load_video_settings()
+
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background-color: {c.bg_panel}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border_bright}; border-radius: 4px; padding: 4px; "
+            f"font-size: 12px; }}"
+            f"QMenu::item {{ padding: 6px 12px; border-radius: 3px; }}"
+            f"QMenu::item:selected {{ background-color: {c.bg_active}; }}"
+        )
+        combo_style = (
+            f"QComboBox {{ background-color: {c.bg_deep}; color: {c.text_primary}; "
+            f"border: 1px solid {c.border}; border-radius: 3px; padding: 3px 6px; "
+            f"font-size: 11px; min-width: 120px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background-color: {c.bg_panel}; "
+            f"color: {c.text_primary}; selection-background-color: {c.bg_active}; "
+            f"border: 1px solid {c.border_bright}; }}"
+        )
+        label_style = f"color: {c.text_secondary}; font-size: 11px; border: none;"
+
+        # -- Resolution preset --
+        res_widget = QWidget()
+        res_widget.setStyleSheet("background: transparent; border: none;")
+        rl = QVBoxLayout(res_widget)
+        rl.setContentsMargins(8, 4, 8, 4)
+        rl.setSpacing(2)
+        rl.addWidget(QLabel("Resolution"))
+        rl.itemAt(0).widget().setStyleSheet(label_style)
+
+        self._res_combo = QComboBox()
+        self._res_combo.setStyleSheet(combo_style)
+        selected_res = 0
+        for i, (label, w, h) in enumerate(self._RES_PRESETS):
+            self._res_combo.addItem(label, (w, h))
+            if w == saved_w and h == saved_h:
+                selected_res = i
+        self._res_combo.setCurrentIndex(selected_res)
+        self._res_combo.currentIndexChanged.connect(self._on_setting_changed)
+        rl.addWidget(self._res_combo)
+
+        res_action = QWidgetAction(menu)
+        res_action.setDefaultWidget(res_widget)
+        menu.addAction(res_action)
+
+        # -- FPS --
+        fps_widget = QWidget()
+        fps_widget.setStyleSheet("background: transparent; border: none;")
+        fl = QVBoxLayout(fps_widget)
+        fl.setContentsMargins(8, 4, 8, 4)
+        fl.setSpacing(2)
+        fl.addWidget(QLabel("Frame Rate"))
+        fl.itemAt(0).widget().setStyleSheet(label_style)
+
+        self._fps_combo = QComboBox()
+        self._fps_combo.setStyleSheet(combo_style)
+        selected_fps = 0
+        for i, fps in enumerate(self._FPS_OPTIONS):
+            self._fps_combo.addItem(f"{fps} fps", fps)
+            if fps == saved_fps:
+                selected_fps = i
+        self._fps_combo.setCurrentIndex(selected_fps)
+        self._fps_combo.currentIndexChanged.connect(self._on_setting_changed)
+        fl.addWidget(self._fps_combo)
+
+        fps_action = QWidgetAction(menu)
+        fps_action.setDefaultWidget(fps_widget)
+        menu.addAction(fps_action)
+
+        # -- Bitrate --
+        br_widget = QWidget()
+        br_widget.setStyleSheet("background: transparent; border: none;")
+        bl = QVBoxLayout(br_widget)
+        bl.setContentsMargins(8, 4, 8, 4)
+        bl.setSpacing(2)
+        bl.addWidget(QLabel("Bitrate"))
+        bl.itemAt(0).widget().setStyleSheet(label_style)
+
+        self._br_combo = QComboBox()
+        self._br_combo.setStyleSheet(combo_style)
+        selected_br = 0
+        for i, (label, kbps) in enumerate(self._BITRATE_OPTIONS):
+            self._br_combo.addItem(label, kbps)
+            if kbps == saved_kbps:
+                selected_br = i
+        self._br_combo.setCurrentIndex(selected_br)
+        self._br_combo.currentIndexChanged.connect(self._on_setting_changed)
+        bl.addWidget(self._br_combo)
+
+        br_action = QWidgetAction(menu)
+        br_action.setDefaultWidget(br_widget)
+        menu.addAction(br_action)
+
+        menu.exec(self._video_menu_btn.mapToGlobal(
+            self._video_menu_btn.rect().bottomLeft()
+        ))
+
+    def _on_setting_changed(self, _index: int) -> None:
+        """Save settings and restart video if currently streaming."""
+        w, h = self._res_combo.currentData() or (1280, 720)
+        fps = self._fps_combo.currentData() or 30
+        kbps = self._br_combo.currentData() or 1000
+        self._save_video_settings(w, h, fps, kbps)
+
+        state = AppState.instance()
+        mc = state._media_client
+        if mc is None:
+            return
+        try:
+            mc.set_video_config(w, h, fps, kbps)
+            # Restart camera if already streaming so changes take effect
+            if state.voice_self_video:
+                mc.set_video(False)
+                mc.set_video(True)
+                log.debug("Video restarted: %dx%d @ %dfps %dkbps", w, h, fps, kbps)
+        except Exception:
+            log.warning("Failed to apply video config", exc_info=True)
 
 
 class UserPanel(QFrame):
@@ -359,3 +595,4 @@ class UserPanel(QFrame):
             self._deafen_btn.setIcon(tinted_icon(_ICONS_DIR / "headphones.svg", c.text_dim, size=18))
             self._deafen_btn.setStyleSheet(self._btn_style)
             self._deafen_btn.setToolTip("Deafen")
+

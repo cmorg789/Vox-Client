@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QStandardPaths, QTimer, Signal
+from PySide6.QtCore import QObject, QSocketNotifier, QStandardPaths, QTimer, Signal
 
 from vox_sdk import Client, GatewayClient
 from vox_sdk.models.dms import DMResponse
@@ -36,6 +37,7 @@ def _event_to_msg_dict(event: object) -> dict:
         "attachments": getattr(event, "attachments", []),
         "embed": getattr(event, "embed", None),
         "edit_timestamp": getattr(event, "edit_timestamp", None),
+        "opaque_blob": getattr(event, "opaque_blob", None),
     }
 
 
@@ -72,6 +74,8 @@ class AppState(QObject):
     voice_connection_error = Signal(str)  # join failure message
     voice_media_event = Signal(str, str)  # (event_type, detail) from media client
     speaking_changed = Signal(int, bool)  # (user_id, is_speaking)
+    video_frame_received = Signal(int, object)  # (user_id, QImage)
+    video_state_changed = Signal()  # any user's video on/off changed
 
     # Emoji signals
     emoji_changed = Signal()
@@ -131,6 +135,10 @@ class AppState(QObject):
         self._user_volumes: dict[int, float] = {}  # user_id → log volume (session-local)
         self._speaking_users: set[int] = set()  # user_ids currently speaking
         self._media_poll_timer: QTimer | None = None
+        self._video_notify_pipe: tuple[int, int] | None = None  # (read_fd, write_fd)
+        self._video_notifier: QSocketNotifier | None = None
+        self.voice_self_video: bool = False
+        self._video_users: set[int] = set()  # user_ids with video enabled
 
         # E2EE / MLS
         self._crypto: object | None = None  # CryptoManager, lazy-imported
@@ -420,6 +428,10 @@ class AppState(QObject):
             except Exception:
                 log.warning("Error sending voice leave for room %d", room_id, exc_info=True)
         self.voice_room_id = None
+        # Clear video state
+        self.voice_self_video = False
+        self._video_users.clear()
+        self.video_state_changed.emit()
         # Clear speaking state for all users
         for uid in list(self._speaking_users):
             self._speaking_users.discard(uid)
@@ -439,6 +451,69 @@ class AppState(QObject):
         if self._media_poll_timer is not None:
             self._media_poll_timer.stop()
             self._media_poll_timer = None
+        self._stop_video_notify()
+
+    def _start_video_notify(self) -> None:
+        """Set up an os.pipe() + QSocketNotifier for zero-latency frame delivery."""
+        if self._video_notifier is not None:
+            return
+        mc = self._media_client
+        if mc is None:
+            return
+        r_fd, w_fd = os.pipe()
+        os.set_blocking(r_fd, False)
+        os.set_blocking(w_fd, False)
+        self._video_notify_pipe = (r_fd, w_fd)
+        mc.set_video_notify_fd(w_fd)
+        notifier = QSocketNotifier(r_fd, QSocketNotifier.Type.Read, self)
+        notifier.activated.connect(self._on_video_frame_ready)
+        notifier.setEnabled(True)
+        self._video_notifier = notifier
+
+    def _stop_video_notify(self) -> None:
+        if self._video_notifier is not None:
+            self._video_notifier.setEnabled(False)
+            self._video_notifier.deleteLater()
+            self._video_notifier = None
+        mc = self._media_client
+        if mc is not None:
+            try:
+                mc.set_video_notify_fd(-1)
+            except Exception:
+                pass
+        if self._video_notify_pipe is not None:
+            r_fd, w_fd = self._video_notify_pipe
+            os.close(r_fd)
+            os.close(w_fd)
+            self._video_notify_pipe = None
+
+    def _on_video_frame_ready(self) -> None:
+        """Called by QSocketNotifier when the Rust side pushes a frame."""
+        # Drain the notification pipe
+        if self._video_notify_pipe is not None:
+            try:
+                os.read(self._video_notify_pipe[0], 4096)
+            except OSError:
+                pass
+        mc = self._media_client
+        if mc is None:
+            return
+        try:
+            from PySide6.QtGui import QImage
+
+            latest: dict[int, tuple] = {}
+            while True:
+                frame = mc.poll_video_frame()
+                if frame is None:
+                    break
+                uid_raw, w, h, rgba = frame
+                uid = self.user_id if int(uid_raw) == 0 else int(uid_raw)
+                latest[uid] = (rgba, w, h)
+            for uid, (rgba, w, h) in latest.items():
+                img = QImage(rgba, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
+                self.video_frame_received.emit(uid, img)
+        except Exception:
+            log.error("Error polling video frames", exc_info=True)
 
     def _poll_media_events(self) -> None:
         mc = self._media_client
@@ -469,6 +544,12 @@ class AppState(QObject):
                     self.voice_connection_error.emit(f"Audio error: {detail}")
                 elif event_type == "video_error":
                     log.error("Video error: %s", detail)
+                    # Reset video state so UI reflects camera is off
+                    if self.voice_self_video:
+                        self.voice_self_video = False
+                        self._video_users.discard(self.user_id)
+                        self.video_state_changed.emit()
+                    self.voice_connection_error.emit(f"Camera error: {detail}")
                 elif event_type == "speaking_start":
                     try:
                         uid = int(detail)
@@ -487,6 +568,7 @@ class AppState(QObject):
                         pass
         except Exception:
             log.error("Error polling media events", exc_info=True)
+
 
     def voice_set_mute(self, muted: bool) -> None:
         self.voice_self_mute = muted
@@ -524,6 +606,34 @@ class AppState(QObject):
                 self._media_client.set_noise_gate(threshold)
             except Exception:
                 log.warning("Failed to set noise gate on media client", exc_info=True)
+
+    def voice_toggle_video(self) -> None:
+        """Toggle video on/off for the local user."""
+        if self._media_client is None or self.voice_room_id is None:
+            return
+        self.voice_self_video = not self.voice_self_video
+        try:
+            if self.voice_self_video:
+                from PySide6.QtCore import QSettings as _QS
+                _s = _QS("Vox", "VoxClient")
+                w = int(_s.value("video/width", 1280))
+                h = int(_s.value("video/height", 720))
+                fps = int(_s.value("video/fps", 30))
+                kbps = int(_s.value("video/bitrate", 1000))
+                self._media_client.set_video_config(w, h, fps, kbps)
+            self._media_client.set_video(self.voice_self_video)
+        except Exception:
+            log.warning("Failed to toggle video: %s", self.voice_self_video, exc_info=True)
+            self.voice_self_video = not self.voice_self_video
+            return
+        if self.voice_self_video:
+            self._video_users.add(self.user_id)
+            self._start_video_notify()
+        else:
+            self._video_users.discard(self.user_id)
+            if not self._video_users:
+                self._stop_video_notify()
+        self.video_state_changed.emit()
 
     def voice_set_user_volume(self, user_id: int, volume: float) -> None:
         self._user_volumes[user_id] = volume
@@ -684,6 +794,10 @@ class AppState(QObject):
             def _apply(e=event):  # noqa: ANN001
                 from vox_client.cache import message_cache
                 d = _event_to_msg_dict(e)
+                if getattr(e, "dm_id", None):
+                    self.decrypt_body(d)
+                    # Patch body back onto event so _on_message_received sees it
+                    e.body = d.get("body")
                 key = f"dm:{e.dm_id}" if getattr(e, "dm_id", None) else f"feed:{e.feed_id}"
                 message_cache.append(key, d)
                 self.message_received.emit(e)
@@ -1021,6 +1135,23 @@ class AppState(QObject):
                         self._voice_room_members[rid] = members
                     else:
                         self._voice_room_members.pop(rid, None)
+                    # Track video users
+                    old_video = set(self._video_users)
+                    new_video: set[int] = set()
+                    for rm in self._voice_room_members.values():
+                        for vm in rm.values():
+                            if vm.video:
+                                new_video.add(vm.user_id)
+                    # Preserve self-video state (server echo may lag)
+                    if self.voice_self_video and self.user_id is not None:
+                        new_video.add(self.user_id)
+                    self._video_users = new_video
+                    if old_video != new_video:
+                        if new_video:
+                            self._start_video_notify()
+                        elif not new_video:
+                            self._stop_video_notify()
+                        self.video_state_changed.emit()
                     self.voice_state_changed.emit()
                 except Exception:
                     log.error("Error handling voice_state_update", exc_info=True)

@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 from qasync import asyncSlot
 
 from vox_sdk import Client
@@ -68,6 +68,7 @@ from vox_client.widgets.message_list import MessageList
 from vox_client.widgets.server_strip import ServerStrip
 from vox_client.widgets.toast import ToastManager
 from vox_client.widgets.user_panel import UserPanel, VoiceStatusBar
+from vox_client.widgets.video_grid import VideoGrid
 
 
 class MainWindow(QMainWindow):
@@ -140,7 +141,11 @@ class MainWindow(QMainWindow):
         chat_layout.addWidget(self._chat_header)
 
         self._message_list = MessageList()
-        chat_layout.addWidget(self._message_list, stretch=1)
+        self._video_grid = VideoGrid()
+        self._chat_stack = QStackedWidget()
+        self._chat_stack.addWidget(self._message_list)   # index 0
+        self._chat_stack.addWidget(self._video_grid)     # index 1
+        chat_layout.addWidget(self._chat_stack, stretch=1)
 
         # Typing indicator
         self._typing_label = QLabel()
@@ -184,6 +189,7 @@ class MainWindow(QMainWindow):
         self._state.typing_started.connect(self._on_remote_typing)
         self._state.presence_updated.connect(self._on_presence_updated)
         self._state.theme_changed.connect(self._on_theme_changed)
+        self._state.video_state_changed.connect(self._on_video_state_changed)
 
         # Drag-and-drop: forward file drops from message list to chat input staging
         self._message_list.file_dropped.connect(self._chat_input._stage_file)
@@ -530,8 +536,8 @@ class MainWindow(QMainWindow):
                             dm_id, opaque_blob=blob, **kwargs,
                         )
                     except Exception:
-                        # Remove the stashed plaintext since the send failed
-                        if q:
+                        # Remove stashed plaintext — guard against interleaved sends
+                        if q and q[-1] == text:
                             q.pop()
                         if not q and dm_id in self._state._pending_plaintext:
                             del self._state._pending_plaintext[dm_id]
@@ -734,6 +740,13 @@ class MainWindow(QMainWindow):
         if uid == self._state.user_id:
             self._user_panel.update_user()
 
+    # -- video -----------------------------------------------------------------
+
+    def _on_video_state_changed(self) -> None:
+        """Swap between message list and video grid based on active video users."""
+        has_video = bool(self._state._video_users)
+        self._chat_stack.setCurrentIndex(1 if has_video else 0)
+
     # -- theme -----------------------------------------------------------------
 
     def _on_theme_changed(self) -> None:
@@ -750,6 +763,7 @@ class MainWindow(QMainWindow):
         self._chat_header.restyle()
         self._chat_input.restyle()
         self._message_list.restyle()
+        self._video_grid.restyle()
 
         # Chat column background
         chat_col = self.findChild(QWidget, "ChatCol")
@@ -801,6 +815,8 @@ class MainWindow(QMainWindow):
         state._rooms.clear()
         state._voice_room_members.clear()
         state._layout = None
+        state._pending_plaintext.clear()
+        state._crypto = None
         self._user_panel.update_user()
         self._member_sidebar.refresh()
         self._channel_sidebar.populate()
